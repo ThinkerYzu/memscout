@@ -75,11 +75,12 @@ class BundleSelfContainedTest(unittest.TestCase):
         source = open(bundled).read()
         self.assertNotIn("import memscout", source, "bundle must inline, not import, memscout")
 
-        # Run it where memscout can't be imported: scrubbed env, cwd in tmp.
+        # Run it where memscout truly can't be imported: `-S` drops site-packages (so an
+        # installed memscout is hidden) and a scrubbed PYTHONPATH drops any dev checkout.
         env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
         env["PYTHONPATH"] = ""
         log_path = os.path.join(self.tmp, "out.jsonl")
-        subprocess.run([sys.executable, bundled, str(self.pid), cfg_path, "--out", log_path],
+        subprocess.run([sys.executable, "-S", bundled, str(self.pid), cfg_path, "--out", log_path],
                        cwd=self.tmp, env=env, check=True)
 
         with open(log_path) as f:
@@ -114,7 +115,7 @@ class BundleSelfContainedTest(unittest.TestCase):
         env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
         env["PYTHONPATH"] = ""
         log_path = os.path.join(self.tmp, "min_out.jsonl")
-        subprocess.run([sys.executable, bundled, str(self.pid), cfg_path, "--out", log_path],
+        subprocess.run([sys.executable, "-S", bundled, str(self.pid), cfg_path, "--out", log_path],
                        cwd=self.tmp, env=env, check=True)
         with open(log_path) as f:
             objects = [json.loads(l) for l in f][1:]
@@ -122,12 +123,13 @@ class BundleSelfContainedTest(unittest.TestCase):
         self.assertEqual({a: t["mId"] for a, t in self.truth.items()}, by_addr)
 
     def test_bundled_python_cannot_import_memscout(self):
-        # Sanity: the scrubbed env we use really does hide memscout.
+        # Sanity: the isolation we use (-S + scrubbed PYTHONPATH) really does hide memscout,
+        # even when it's pip-installed into site-packages (as in CI).
         env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
         env["PYTHONPATH"] = ""
-        r = subprocess.run([sys.executable, "-c", "import memscout"],
+        r = subprocess.run([sys.executable, "-S", "-c", "import memscout"],
                            cwd=self.tmp, env=env, capture_output=True, text=True)
-        self.assertNotEqual(r.returncode, 0, "memscout must NOT be importable in the test env")
+        self.assertNotEqual(r.returncode, 0, "memscout must NOT be importable under -S + scrubbed env")
 
 
 if __name__ == "__main__":
