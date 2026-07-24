@@ -57,3 +57,7 @@ The runtime/reporter core has no third-party dependencies; only the DWARF author
 ## Docs
 
 Full spec, design, and handoff live in the task repo under `proj_docs/memscout/`.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
