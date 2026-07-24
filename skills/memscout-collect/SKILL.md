@@ -37,6 +37,12 @@ file. This skill walks you from source code to that shipped file.
 Prerequisites: `pip install -e '.[authoring]'` (adds `pyelftools` for DWARF). The reporter
 needs only a stock Python 3.
 
+> **Don't read memscout's source to author a script — read [`REFERENCE.md`](REFERENCE.md)**
+> (next to this file). It documents the complete reporter-side surface: every `Reporter`
+> method with its return type, the **exact value each decoder token returns** (scalars,
+> strings, `refptr`, `nstarray`, the hashtables), the spec-string grammar, the config schema,
+> and the scan limits/gotchas. That's authoritative; the source shouldn't be needed.
+
 ---
 
 ## The five steps
@@ -105,7 +111,11 @@ instances to exercise decoding, e.g. try a concrete DOM class in a tab process.)
 **Decoder type tokens** for the specs: `u8 u16 u32 u64 i8 i16 i32 i64 bool ptr`,
 `atomic:<T>`, Firefox strings `nsstring`/`nscstring` (and `ns[A]String` variants),
 `nstarray`, `refptr`/`nscomptr`, and hashtables `pldhash` / `mhashtable[:entry_size]`.
-`memscout offsets` picks these for you from DWARF.
+`memscout offsets` picks these for you from DWARF. For **what each token returns** — scalars
+give ints, strings give a `str` (or a `"<…>"` sentinel), `refptr` gives the raw pointee
+address, `nstarray` gives `{length, data}`, hashtables give `{count, capacity, live:[…]}` —
+see [`REFERENCE.md`](REFERENCE.md); knowing the shape is essential when a field points at more
+to read.
 
 ### 4. Collect the spec strings and locations (the config)
 
@@ -192,7 +202,10 @@ grep '"type": "object"' wakelock.jsonl | jq .
 ## Reporter API — what a collection script may call
 
 A reporter script imports only the self-contained runtime and drives a `Reporter`. These are the
-**only** primitives available on the reporter side (no symbols, DWARF, or network):
+**only** primitives available on the reporter side (no symbols, DWARF, or network). The quick
+surface is below; **[`REFERENCE.md`](REFERENCE.md) has the full signatures, return types, and
+gotchas** (the silent `find_objects(limit=1000)` cap, the JS-heap scan skip, the `+16` vtable
+rule, and each decoder's exact return shape):
 
 ```python
 from memscout.runtime import Reporter, register
@@ -248,8 +261,10 @@ script. A reporter script uses only the surface above.
 
 ## See also
 
-Bundled with this skill, under `examples/` next to this file:
+Bundled with this skill, next to this file:
 
+- [`REFERENCE.md`](REFERENCE.md) — the complete reporter-side API and decoder reference (consult
+  this instead of reading memscout's source).
 - `examples/author.py` and `examples/collect.py` — the developer- and reporter-side scripts this
   skill drives; copy `collect.py` as your reporter-script starting point (step 5).
 - `examples/demo_target.cpp` — a tiny stand-in app (a `Session` class with a known layout) to
