@@ -35,6 +35,12 @@ memscout's primary use case is collecting runtime info from a machine you can't 
 
 See [`examples/`](examples/) for a runnable end-to-end walkthrough (`author.py` → `collect.py`).
 
+**Working with an AI agent?** This repo ships a Claude Code skill,
+[`.claude/skills/memscout-collect`](.claude/skills/memscout-collect/SKILL.md), that teaches the
+full authoring flow — study the target class, pick objects/fields, verify with the CLI, gather
+the `(module, offset)` + specs for the build, and generate the reporter's script. Open the repo
+in Claude Code and it's available automatically.
+
 ## Install
 
     pip install -e .                 # runtime + CLI (standard library only)
