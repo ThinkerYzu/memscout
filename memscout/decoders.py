@@ -63,7 +63,8 @@ def _make_int_decoder(size, signed):
 
 
 for _tok, _sz, _sg in (("u8", 1, False), ("u16", 2, False), ("u32", 4, False),
-                       ("u64", 8, False), ("i32", 4, True), ("i64", 8, True),
+                       ("u64", 8, False), ("i8", 1, True), ("i16", 2, True),
+                       ("i32", 4, True), ("i64", 8, True),
                        ("bool", 1, False), ("ptr", 8, False)):
     register(_tok, _make_int_decoder(_sz, _sg))
 

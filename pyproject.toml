@@ -9,6 +9,11 @@ description = "Lightweight, read-only runtime data-collection framework for live
 requires-python = ">=3.8"
 dependencies = []          # runtime is stdlib-only; shells out to readelf/debuginfod-find
 
+[project.optional-dependencies]
+# Developer-side authoring only (Level 2 DWARF -> spec strings). The reporter/runtime
+# core needs none of this.
+authoring = ["pyelftools>=0.29"]
+
 [project.scripts]
 memscout = "memscout.cli:main"
 

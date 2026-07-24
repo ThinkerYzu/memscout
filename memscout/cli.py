@@ -51,6 +51,17 @@ def _cmd_dump(args):
                 print(line)
 
 
+def _cmd_offsets(args):
+    """Developer-side: emit OFF:TYPE:NAME specs for a type from a debug-info ELF (DWARF)."""
+    from . import dwarf
+    try:
+        specs = dwarf.field_specs(args.debuginfo, args.type, args.fields or None)
+    except (RuntimeError, ValueError) as e:
+        raise SystemExit(str(e))
+    for spec in specs:
+        print(spec)
+
+
 def _fmt_value(val):
     """Render a decoded field value for the scan listing: strings quoted, dicts compact."""
     if isinstance(val, str):
@@ -136,6 +147,15 @@ def main(argv=None):
     p_dump.add_argument("--count", type=int, default=12,
                         help="number of 8-byte slots to show when no fields are given")
     p_dump.set_defaults(func=_cmd_dump)
+
+    p_offsets = sub.add_parser(
+        "offsets", help="(developer/authoring) emit OFF:TYPE:NAME specs for a type from DWARF",
+        epilog="Reads a debug-info ELF (needs pyelftools). Offline authoring aid; the reporter "
+               "side never runs this. Fields default to all members in offset order.")
+    p_offsets.add_argument("debuginfo", help="ELF file with DWARF (unstripped build or .debug)")
+    p_offsets.add_argument("type", help="C++ type name, qualified (e.g. mozilla::dom::WakeLock)")
+    p_offsets.add_argument("fields", nargs="*", help="member names to emit (default: all)")
+    p_offsets.set_defaults(func=_cmd_offsets)
 
     args = parser.parse_args(argv)
     return args.func(args)
