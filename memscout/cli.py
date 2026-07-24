@@ -21,14 +21,20 @@ def _cmd_modules(args):
 
 
 def _cmd_resolve(args):
-    """Resolve one symbol to its runtime address and print where it came from."""
+    """Resolve one symbol to its runtime address and its module-relative (module, offset).
+
+    The `module+offset` form is the load-base-relative address a developer hands to a
+    reporter's script, which turns it back into a live address with relocate().
+    """
     with Target(args.pid) as t:
         sym = t.resolve(args.name, module=args.module)
         if sym is None:
             print("symbol %r not found" % args.name)
             return 1
-        print("%s = %#x  (%s, size=%s, via %s) in %s"
-              % (sym.name, sym.addr, sym.kind, sym.size, sym.source, sym.module.name))
+        offset = sym.addr - sym.module.load_bias
+        print("%s = %#x  =  %s+%#x  (%s, size=%s, via %s)"
+              % (sym.name, sym.addr, sym.module.name, offset,
+                 sym.kind, sym.size, sym.source))
 
 
 def _cmd_dump(args):
