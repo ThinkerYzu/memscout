@@ -115,6 +115,23 @@ class CppTargetTest(unittest.TestCase):
             self.assertEqual(t.relocate(sym.module.name, offset), sym.addr)
             self.assertIsNone(t.relocate("no-such-module.so", 0x10))
 
+    def test_reporter_side_workflow_relocate_scan_decode(self):
+        # Full reporter-side path with NO symbol resolution: the developer resolves the
+        # vtable offline to (module, offset); the reporter only relocates, scans, decodes.
+        with memscout.Target(self.pid) as dev:                # developer (offline, authoring)
+            sym = dev.resolve("_ZTV6Widget")
+            module_name, vtable_offset = sym.module.name, sym.addr - sym.module.load_bias
+
+        with memscout.Target(self.pid) as rep:                # reporter (relocate/scan/decode only)
+            needle = rep.relocate(module_name, vtable_offset) + 16
+            found = set(rep.find_objects(needle))
+            self.assertEqual(found, set(self.truth),
+                             "reporter must find the same objects via a relocated needle")
+            for base in found:
+                got = rep.decode(base, "12:i32:id 24:nscstring:name")
+                self.assertEqual(got["id"], self.truth[base]["id"])
+                self.assertEqual(got["name"], self.truth[base]["name"])
+
     def test_identify_class_from_vptr(self):
         with memscout.Target(self.pid) as t:
             for base in self.truth:
