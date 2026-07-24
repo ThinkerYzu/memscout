@@ -78,6 +78,14 @@ python3 collect_bundled.py <pid> session.json --out sessions.jsonl
 `from memscout.runtime import …`. The result is one auditable file that reads memory, relocates,
 scans, and decodes — and nothing else.
 
+Add `--minify` to strip comments and docstrings from the inlined runtime (~30% smaller; the
+developer's script stays readable). It needs Python 3.9+ on the authoring machine; the output
+still runs on any Python the reporter has:
+
+```bash
+memscout bundle collect.py --minify -o collect_bundled.py
+```
+
 ### The log `collect.py` wrote (shared back to the developer)
 
 ```json

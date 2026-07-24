@@ -9,6 +9,7 @@ It's a plain concatenation, not a dependency analyzer: `runtime.py` is already e
 reporter-side surface, so there's nothing to tree-shake.
 """
 
+import ast
 import inspect
 import re
 
@@ -21,9 +22,39 @@ _RUNTIME_IMPORT = re.compile(
     r"|from\s+memscout\s+import\s+runtime\b).*$")
 
 
-def bundle(script_path):
-    """Return a self-contained script: the reporter runtime inlined ahead of `script_path`."""
+def minify(source):
+    """Strip comments and docstrings from Python source, returning valid equivalent code.
+
+    Parses to an AST, drops module/class/function docstrings, and re-emits with
+    `ast.unparse` (which also discards comments). This is layout-lossy but semantically
+    faithful -- far safer than text munging. Needs Python 3.9+ on the authoring machine
+    (the bundled output still runs on any Python the reporter has).
+    """
+    if not hasattr(ast, "unparse"):
+        raise RuntimeError("--minify requires Python 3.9+ (ast.unparse) on the authoring machine")
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        body = node.body
+        first = body[0] if body else None
+        if (isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant)
+                and isinstance(first.value.value, str)):
+            del body[0]
+            if not body:
+                body.append(ast.Pass())         # keep an empty block legal
+    return ast.unparse(tree)
+
+
+def bundle(script_path, minify_runtime=False):
+    """Return a self-contained script: the reporter runtime inlined ahead of `script_path`.
+
+    With minify_runtime, the inlined runtime is stripped of comments/docstrings first (the
+    developer's script is left readable/auditable).
+    """
     runtime_src = inspect.getsource(runtime)
+    if minify_runtime:
+        runtime_src = minify(runtime_src)
     with open(script_path) as f:
         script_src = f.read()
     kept = [line for line in script_src.splitlines() if not _RUNTIME_IMPORT.match(line)]

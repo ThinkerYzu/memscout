@@ -92,6 +92,35 @@ class BundleSelfContainedTest(unittest.TestCase):
             self.assertEqual(by_addr[addr]["mId"], truth["mId"])
             self.assertEqual(by_addr[addr]["mUser"], truth["mUser"])
 
+    @unittest.skipUnless(hasattr(__import__("ast"), "unparse"), "--minify needs Python 3.9+")
+    def test_minified_bundle_is_smaller_and_still_runs(self):
+        import author
+
+        config = author.author(self.pid, "_ZTV7Session", ["12:i32:mId", "24:nscstring:mUser"])
+        cfg_path = os.path.join(self.tmp, "m_session.json")
+        with open(cfg_path, "w") as f:
+            json.dump(config, f)
+
+        plain = bundle.bundle(os.path.join(_EXAMPLES, "collect.py"))
+        mini = bundle.bundle(os.path.join(_EXAMPLES, "collect.py"), minify_runtime=True)
+        self.assertLess(len(mini), len(plain), "minified bundle should be smaller")
+        compile(mini, "<mini>", "exec")                # valid Python
+        self.assertNotIn('"""', mini.split("collection script")[0],
+                         "runtime docstrings should be stripped in the minified half")
+
+        bundled = os.path.join(self.tmp, "min_bundled.py")
+        with open(bundled, "w") as f:
+            f.write(mini)
+        env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+        env["PYTHONPATH"] = ""
+        log_path = os.path.join(self.tmp, "min_out.jsonl")
+        subprocess.run([sys.executable, bundled, str(self.pid), cfg_path, "--out", log_path],
+                       cwd=self.tmp, env=env, check=True)
+        with open(log_path) as f:
+            objects = [json.loads(l) for l in f][1:]
+        by_addr = {int(o["addr"], 16): o["mId"] for o in objects}
+        self.assertEqual({a: t["mId"] for a, t in self.truth.items()}, by_addr)
+
     def test_bundled_python_cannot_import_memscout(self):
         # Sanity: the scrubbed env we use really does hide memscout.
         env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}

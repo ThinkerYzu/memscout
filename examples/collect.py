@@ -66,7 +66,8 @@ def collect(pid, config, out_path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    # A literal description (not __doc__): once bundled, __doc__ is the module's, not ours.
+    parser = argparse.ArgumentParser(description="memscout reporter-side collection")
     parser.add_argument("pid", type=int)
     parser.add_argument("config", help="config.json produced by author.py")
     parser.add_argument("--out", default="collect.jsonl", help="log file to write")

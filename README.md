@@ -14,7 +14,7 @@ decoding); scripts compose them to answer a specific runtime question.
     memscout scan     <pid> <vtable-symbol> [OFF:TYPE:NAME ...] # find + decode live objects
     memscout dump     <pid> <addr> [OFF:TYPE:NAME ...]         # an object's class + fields/slots
     memscout offsets  <debuginfo-elf> <type> [field ...]       # (developer) DWARF -> spec strings
-    memscout bundle   <script.py> [-o out.py]                  # inline runtime -> one self-contained file
+    memscout bundle   <script.py> [-o out.py] [--minify]       # inline runtime -> one self-contained file
 
 As a library: `import memscout; with memscout.Target(pid) as t: ...` — everything the CLI does is
 available programmatically (`resolve`, `relocate`, `find_objects`, `decode`, `identify_class`, …).

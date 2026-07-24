@@ -62,7 +62,7 @@ def _cmd_dump(args):
 def _cmd_bundle(args):
     """Inline the reporter runtime into a script -> one self-contained file (or stdout)."""
     from . import bundle
-    text = bundle.bundle(args.script)
+    text = bundle.bundle(args.script, minify_runtime=args.minify)
     if args.out:
         with open(args.out, "w") as f:
             f.write(text)
@@ -184,6 +184,8 @@ def main(argv=None):
                "import is stripped and the runtime inlined, so the output runs on a stock Python.")
     p_bundle.add_argument("script", help="developer's collection script (imports memscout.runtime)")
     p_bundle.add_argument("-o", "--out", help="output file (default: stdout); made executable")
+    p_bundle.add_argument("--minify", action="store_true",
+                          help="strip comments/docstrings from the inlined runtime (needs Python 3.9+)")
     p_bundle.set_defaults(func=_cmd_bundle)
 
     args = parser.parse_args(argv)
