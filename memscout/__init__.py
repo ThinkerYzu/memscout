@@ -14,7 +14,7 @@ the read/enumerate/scan core.
 """
 
 from .target import Target
-from .maps import Module, ModuleMap
+from .runtime import Reporter, Module, ModuleMap, register as register_decoder
 
 __version__ = "0.1.0"
-__all__ = ["Target", "Module", "ModuleMap", "__version__"]
+__all__ = ["Target", "Reporter", "Module", "ModuleMap", "register_decoder", "__version__"]
