@@ -32,15 +32,23 @@ def _cmd_resolve(args):
 
 
 def _cmd_dump(args):
-    """Print the content of the object at an address: class + annotated slots."""
+    """Print the content of the object at an address.
+
+    With `OFF:TYPE:NAME` field specs, decodes those named fields (same decoders as
+    `scan`); with none, shows the class-annotated raw slots.
+    """
     with Target(args.pid) as t:
         cls = t.identify_class(args.addr)
         head = "object @ %#x" % args.addr
         if cls:
             head += "  (class %s)" % cls
         print(head)
-        for line in t.dump_object(args.addr, count=args.count):
-            print(line)
+        if args.fields:
+            for name, val in t.decode(args.addr, args.fields).items():
+                print("  %s = %s" % (name, _fmt_value(val)))
+        else:
+            for line in t.dump_object(args.addr, count=args.count):
+                print(line)
 
 
 def _fmt_value(val):
@@ -119,10 +127,14 @@ def main(argv=None):
     p_scan.set_defaults(func=_cmd_scan)
 
     p_dump = sub.add_parser(
-        "dump", help="print an object's content at an address: class + annotated slots")
+        "dump", help="print an object's content at an address (class + fields or annotated slots)",
+        epilog="Field types: u8 u16 u32 u64 i32 i64 bool ptr nsstring nscstring nstarray "
+               "refptr atomic:T pldhash mhashtable[:size]. With no fields, dumps annotated slots.")
     p_dump.add_argument("pid", type=int)
     p_dump.add_argument("addr", type=lambda x: int(x, 0), help="object address (hex or decimal)")
-    p_dump.add_argument("--count", type=int, default=12, help="number of 8-byte slots to show")
+    p_dump.add_argument("fields", nargs="*", help="OFF:TYPE:NAME, repeatable")
+    p_dump.add_argument("--count", type=int, default=12,
+                        help="number of 8-byte slots to show when no fields are given")
     p_dump.set_defaults(func=_cmd_dump)
 
     args = parser.parse_args(argv)

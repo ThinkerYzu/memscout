@@ -9,6 +9,8 @@ scan, and every scalar/string decoder.
 Skipped if no C++ compiler is available.
 """
 
+import contextlib
+import io
 import os
 import re
 import shutil
@@ -19,6 +21,7 @@ import time
 import unittest
 
 import memscout
+import memscout.cli
 
 
 def _find_compiler():
@@ -117,6 +120,19 @@ class CppTargetTest(unittest.TestCase):
         # mData points at one of the string literals; its content should be shown.
         self.assertTrue(any(n in blob for n in ("alpha", "bravo", "charlie")),
                         "the string field's content should appear in the dump")
+
+    def test_dump_cli_with_field_specs(self):
+        # `dump <pid> <addr> OFF:TYPE:NAME ...` decodes via the same registry as scan.
+        base = next(iter(self.truth))
+        truth = self.truth[base]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            memscout.cli.main(["dump", str(self.pid), hex(base),
+                               "12:i32:id", "24:nscstring:name"])
+        text = out.getvalue()
+        self.assertIn("(class Widget)", text)
+        self.assertIn("id = %d" % truth["id"], text)
+        self.assertIn("name = %r" % truth["name"], text)
 
 
 if __name__ == "__main__":
