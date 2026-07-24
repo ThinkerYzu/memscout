@@ -1,10 +1,39 @@
 """Decoder registry tests, driven entirely off FakeMemory (no live process)."""
 
+import io
 import struct
 import unittest
+from contextlib import redirect_stdout
 
-from memscout import decoders
+from memscout import cli, decoders
 from support import FakeMemory, pack
+
+
+class RegisteredTokensTest(unittest.TestCase):
+    def test_lists_the_known_builtins(self):
+        tokens = set(decoders.registered_tokens())
+        # every built-in a script/spec may name must be enumerable, not source-only
+        for tok in ("u8", "u16", "u32", "u64", "i8", "i16", "i32", "i64", "bool", "ptr",
+                    "atomic", "nsstring", "nscstring", "nscomptr", "refptr", "nstarray",
+                    "pldhash", "mhashtable"):
+            self.assertIn(tok, tokens)
+
+    def test_sorted_and_matches_registry(self):
+        toks = decoders.registered_tokens()
+        self.assertEqual(toks, sorted(toks))
+        # each listed token actually resolves to a decoder
+        for tok in toks:
+            self.assertIsNotNone(decoders.get(tok))
+
+    def test_decoders_command_covers_whole_registry(self):
+        # `memscout decoders` must describe every registered token (no undocumented ones)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            cli.main(["decoders"])
+        out = buf.getvalue()
+        for tok in decoders.registered_tokens():
+            self.assertIn(tok, out)
+        self.assertNotIn("(custom / undocumented)", out)
 
 
 class SpecParseTest(unittest.TestCase):

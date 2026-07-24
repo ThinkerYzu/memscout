@@ -100,6 +100,10 @@ A field spec is `OFF:TYPE:NAME`:
 `r.decode` maps each token to a Python value. Knowing the **return shape** matters: several
 tokens don't give you a final value but a handle you read further from.
 
+The tables below are the **complete** built-in set. To confirm it live (it can't drift from the
+code), run **`memscout decoders`**, or from Python `memscout.runtime.registered_tokens()` — both
+read the actual registry. Anything not listed isn't built in; add it with `register(...)`.
+
 ### Scalars
 
 | Token | Returns | Notes |

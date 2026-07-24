@@ -5,4 +5,4 @@ runtime.py (the single source of truth for reporter-side primitives). This re-ex
 keeps `from memscout import decoders` working; there is one shared registry.
 """
 
-from .runtime import register, get, parse_spec, decode_field  # noqa: F401
+from .runtime import register, get, parse_spec, decode_field, registered_tokens  # noqa: F401

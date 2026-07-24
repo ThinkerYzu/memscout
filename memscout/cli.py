@@ -72,6 +72,44 @@ def _cmd_bundle(args):
         sys.stdout.write(text)
 
 
+# One-line description per decoder token, for `memscout decoders`. The token *list*
+# comes from the live registry (runtime.registered_tokens), so it can't drift; this only
+# annotates what's there. Tokens without an entry still print (flagged), so a newly
+# registered decoder shows up here even before it's documented.
+_DECODER_DOCS = {
+    "u8": "unsigned 8-bit int", "u16": "unsigned 16-bit int",
+    "u32": "unsigned 32-bit int", "u64": "unsigned 64-bit int",
+    "i8": "signed 8-bit int", "i16": "signed 16-bit int",
+    "i32": "signed 32-bit int", "i64": "signed 64-bit int",
+    "bool": "1-byte bool (returns int 0/1)",
+    "ptr": "8-byte raw pointer (returns the address it holds)",
+    "atomic": "mozilla::Atomic<T>; write as atomic:<T>, e.g. atomic:u32 (decodes as T)",
+    "nsstring": "ns[A]String (UTF-16) -> str",
+    "nsastring": "alias of nsstring",
+    "nsautostring": "alias of nsstring",
+    "nscstring": "ns[A]CString (UTF-8) -> str",
+    "nsacstring": "alias of nscstring",
+    "nsautocstring": "alias of nscstring",
+    "refptr": "RefPtr<T> -> raw pointee address",
+    "nscomptr": "nsCOMPtr<T> -> raw pointee address",
+    "nstarray": "nsTArray<T> -> {length, data} (data = address of element 0)",
+    "pldhash": "XPCOM PLDHashTable -> {count, capacity, entry_size, live[]}",
+    "mhashtable": "mozilla::HashMap/HashSet; write as mhashtable[:entry_size] "
+                  "-> {count, capacity, live[]}",
+}
+
+
+def _cmd_decoders(args):
+    """List every decoder type token a spec's TYPE field may use (the authoritative set)."""
+    from .runtime import registered_tokens
+    print("Decoder type tokens for OFF:TYPE:NAME field specs "
+          "(scan / dump / Reporter.decode):\n")
+    for token in registered_tokens():
+        print("  %-14s %s" % (token, _DECODER_DOCS.get(token, "(custom / undocumented)")))
+    print("\nSpec form: OFF:TYPE:NAME (OFF via int(x,0)). Register your own with "
+          "memscout.runtime.register(token, fn).")
+
+
 def _cmd_offsets(args):
     """Developer-side: emit OFF:TYPE:NAME specs for a type from a debug-info ELF (DWARF)."""
     from . import dwarf
@@ -144,8 +182,8 @@ def main(argv=None):
 
     p_scan = sub.add_parser(
         "scan", help="find live instances of a class by vtable and decode fields",
-        epilog="Field types: u8 u16 u32 u64 i32 i64 bool ptr nsstring nscstring "
-               "nstarray refptr atomic:T pldhash mhashtable[:size]. No fields dumps raw slots.")
+        epilog="Field TYPEs: run `memscout decoders` for the full authoritative list. "
+               "No fields dumps raw slots.")
     p_scan.add_argument("pid", type=int)
     p_scan.add_argument("symbol", help="vtable linker symbol, e.g. _ZTVN7mozilla3dom8WakeLockE")
     p_scan.add_argument("fields", nargs="*", help="OFF:TYPE:NAME, repeatable")
@@ -160,14 +198,20 @@ def main(argv=None):
 
     p_dump = sub.add_parser(
         "dump", help="print an object's content at an address (class + fields or annotated slots)",
-        epilog="Field types: u8 u16 u32 u64 i32 i64 bool ptr nsstring nscstring nstarray "
-               "refptr atomic:T pldhash mhashtable[:size]. With no fields, dumps annotated slots.")
+        epilog="Field TYPEs: run `memscout decoders` for the full authoritative list. "
+               "With no fields, dumps annotated slots.")
     p_dump.add_argument("pid", type=int)
     p_dump.add_argument("addr", type=lambda x: int(x, 0), help="object address (hex or decimal)")
     p_dump.add_argument("fields", nargs="*", help="OFF:TYPE:NAME, repeatable")
     p_dump.add_argument("--count", type=int, default=12,
                         help="number of 8-byte slots to show when no fields are given")
     p_dump.set_defaults(func=_cmd_dump)
+
+    p_decoders = sub.add_parser(
+        "decoders", help="list the decoder type tokens a field spec's TYPE may use",
+        epilog="The list is read from the live decoder registry, so it always matches what "
+               "scan/dump/Reporter.decode actually accept.")
+    p_decoders.set_defaults(func=_cmd_decoders)
 
     p_offsets = sub.add_parser(
         "offsets", help="(developer/authoring) emit OFF:TYPE:NAME specs for a type from DWARF",

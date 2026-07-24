@@ -12,7 +12,7 @@ vtable class identification). `memscout bundle` inlines this module ahead of a
 developer's script to ship one self-contained file.
 
 Public surface: `Reporter`, `Module`, `ModuleMap`, `register` (custom decoders),
-and `decode`/`parse_spec`.
+`registered_tokens` (list the supported decoder tokens), and `decode`/`parse_spec`.
 """
 
 import ctypes
@@ -257,6 +257,17 @@ def register(token, fn):
 def get(token):
     """The decoder registered for `token`, or None."""
     return _REGISTRY.get(token)
+
+
+def registered_tokens():
+    """Sorted list of every decoder type token currently registered.
+
+    This is the authoritative set of base tokens `decode`/`scan`/`dump` accept -- read it
+    straight from the registry so it can never drift from what's actually supported.
+    (Parametric tokens appear as their base here: `atomic` is used as `atomic:<T>`, and
+    `mhashtable` as `mhashtable[:entry_size]`.)
+    """
+    return sorted(_REGISTRY)
 
 
 def parse_spec(spec):

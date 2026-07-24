@@ -113,7 +113,9 @@ instances to exercise decoding, e.g. try a concrete DOM class in a tab process.)
 **Decoder type tokens** for the specs: `u8 u16 u32 u64 i8 i16 i32 i64 bool ptr`,
 `atomic:<T>`, Firefox strings `nsstring`/`nscstring` (and `ns[A]String` variants),
 `nstarray`, `refptr`/`nscomptr`, and hashtables `pldhash` / `mhashtable[:entry_size]`.
-`memscout offsets` picks these for you from DWARF. For **what each token returns** — scalars
+**For the authoritative, complete list run `memscout decoders`** — it prints straight from the
+live registry (with a one-line description each), so it never drifts and you needn't grep the
+source. `memscout offsets` picks these for you from DWARF. For **what each token returns** — scalars
 give ints, strings give a `str` (or a `"<…>"` sentinel), `refptr` gives the raw pointee
 address, `nstarray` gives `{length, data}`, hashtables give `{count, capacity, live:[…]}` —
 see [`REFERENCE.md`](REFERENCE.md); knowing the shape is essential when a field points at more
@@ -226,6 +228,7 @@ grep '"type": "object"' wakelock.jsonl | jq .
 
 | Command | Side | Purpose |
 |---------|------|---------|
+| `memscout decoders` | developer | list every decoder TYPE token (authoritative; from the live registry) |
 | `memscout modules <pid>` | either | loaded modules + build-ids (find libxul + build-id) |
 | `memscout resolve <pid> <sym> [--module]` | developer | symbol → runtime addr **and** `module+offset` |
 | `memscout offsets <debuginfo> <type> [fields]` | developer | DWARF → `OFF:TYPE:NAME` specs |

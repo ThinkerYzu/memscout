@@ -15,6 +15,7 @@ decoding); scripts compose them to answer a specific runtime question.
     memscout resolve  <pid> <symbol> [--module NAME]           # symbol -> addr + module+offset
     memscout scan     <pid> <vtable-symbol> [OFF:TYPE:NAME ...] # find + decode live objects
     memscout dump     <pid> <addr> [OFF:TYPE:NAME ...]         # an object's class + fields/slots
+    memscout decoders                                          # list the field TYPE tokens (authoritative)
     memscout offsets  <debuginfo-elf> <type> [field ...]       # (developer) DWARF -> spec strings
     memscout bundle   <script.py> [-o out.py] [--minify]       # inline runtime -> one self-contained file
 
