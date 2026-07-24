@@ -105,6 +105,16 @@ class CppTargetTest(unittest.TestCase):
                 self.assertEqual(got, self.truth[base],
                                  "decoded fields must match the program's own report")
 
+    def test_relocate_matches_symbol_resolution(self):
+        # The reporter side gets (module, offset) from the developer and relocates it;
+        # that must land at the same address symbol resolution produces on this build.
+        with memscout.Target(self.pid) as t:
+            sym = t.resolve("_ZTV6Widget")
+            self.assertIsNotNone(sym)
+            offset = sym.addr - sym.module.load_bias      # what the developer would ship
+            self.assertEqual(t.relocate(sym.module.name, offset), sym.addr)
+            self.assertIsNone(t.relocate("no-such-module.so", 0x10))
+
     def test_identify_class_from_vptr(self):
         with memscout.Target(self.pid) as t:
             for base in self.truth:

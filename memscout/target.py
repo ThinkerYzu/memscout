@@ -83,6 +83,23 @@ class Target:
         """The loaded module named `name` (basename or path suffix), or None."""
         return self.modules.by_name(name)
 
+    # --- address relocation (reporter-side: no symbols/DWARF needed) ---
+
+    def relocate(self, module, offset):
+        """Live runtime address of a link-relative `offset` in a loaded module, or None.
+
+        `offset` is relative to the module's load base (what a PIE module's symbol
+        vaddr already is), so the runtime address is simply load_bias + offset. This
+        is the reporter side of the remote workflow: the developer resolves a symbol
+        offline for the known build and supplies (module, offset); this turns it into
+        a real address with only the module map -- no symbol table, DWARF, or readelf.
+        `module` may be a module name or a Module.
+        """
+        m = self.module(module) if isinstance(module, str) else module
+        if m is None:
+            return None
+        return m.load_bias + offset
+
     # --- symbol resolution ---
 
     def resolve(self, name, module=None):
