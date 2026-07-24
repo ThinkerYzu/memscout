@@ -116,16 +116,27 @@ class LocalDebugFile(DebugInfoSource):
         return self._table_cache[path].get(name)
 
 
+def _default_sources():
+    """The standard source precedence: local first, then remote (SPEC Decision 3).
+
+    Imported lazily so a bare SymbolResolver (or the offline unit tests) doesn't
+    pull in the remote-source modules until they're actually used.
+    """
+    from .debuginfod import Debuginfod
+    from .mozilla import MozillaSymbols
+    return [LocalSymtab(), LocalDebugFile(), Debuginfod(), MozillaSymbols()]
+
+
 class SymbolResolver:
     """Resolves names to Symbols by trying each source in precedence order.
 
-    Default precedence is local .symtab/.dynsym, then a separate local debug file.
-    Phase 2.3 appends the remote sources (debuginfod, Mozilla). Pass `sources` to
-    override (used by tests).
+    Default precedence is local .symtab/.dynsym, then a separate local debug file,
+    then debuginfod, then the Mozilla symbol server. Pass `sources` to override
+    (used by tests).
     """
 
     def __init__(self, sources=None):
-        self.sources = sources if sources is not None else [LocalSymtab(), LocalDebugFile()]
+        self.sources = sources if sources is not None else _default_sources()
         self._base_vaddr = {}                   # module path -> ELF base vaddr (cached)
 
     def _base(self, module):
