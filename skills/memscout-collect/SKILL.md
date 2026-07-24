@@ -248,7 +248,12 @@ script. A reporter script uses only the surface above.
 
 ## See also
 
-- `examples/README.md` (repo root) — a runnable end-to-end walkthrough on a bundled demo app.
+Bundled with this skill, under `examples/` next to this file:
+
 - `examples/author.py` and `examples/collect.py` — the developer- and reporter-side scripts this
-  skill drives.
-- The repo `README.md` — CLI overview and the reporter → developer workflow in brief.
+  skill drives; copy `collect.py` as your reporter-script starting point (step 5).
+- `examples/demo_target.cpp` — a tiny stand-in app (a `Session` class with a known layout) to
+  exercise both scripts end to end before you retarget to Firefox.
+
+In the memscout project repository (not part of this skill): the top-level `README.md` for the
+CLI overview, and `examples/README.md` for a full runnable walkthrough of the workflow.
