@@ -63,6 +63,21 @@ READY pid=134708
 `vtable_offset` is relative to the module's load base; the reporter turns it into a live
 address with `load_bias + offset`. `build_id` lets the reporter confirm it's the same build.
 
+### Ship one self-contained file
+
+`collect.py` imports only `memscout.runtime`, so it can be inlined into a single file the
+reporter runs with a **stock Python 3 — no memscout install, no third-party packages**:
+
+```bash
+memscout bundle collect.py -o collect_bundled.py      # inline the runtime
+# send collect_bundled.py + session.json to the reporter; they run:
+python3 collect_bundled.py <pid> session.json --out sessions.jsonl
+```
+
+`bundle` prepends `memscout/runtime.py` (the reporter-side primitives) and strips the script's
+`from memscout.runtime import …`. The result is one auditable file that reads memory, relocates,
+scans, and decodes — and nothing else.
+
 ### The log `collect.py` wrote (shared back to the developer)
 
 ```json
