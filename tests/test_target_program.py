@@ -102,6 +102,22 @@ class CppTargetTest(unittest.TestCase):
                 self.assertEqual(got, self.truth[base],
                                  "decoded fields must match the program's own report")
 
+    def test_identify_class_from_vptr(self):
+        with memscout.Target(self.pid) as t:
+            for base in self.truth:
+                self.assertEqual(t.identify_class(base), "Widget",
+                                 "reverse vtable lookup should name the object's class")
+
+    def test_dump_object_annotates_vtable_and_string(self):
+        with memscout.Target(self.pid) as t:
+            base = next(iter(self.truth))
+            lines = list(t.dump_object(base))
+        blob = "\n".join(lines)
+        self.assertIn("vtable Widget", blob, "slot 0 should be annotated as the Widget vtable")
+        # mData points at one of the string literals; its content should be shown.
+        self.assertTrue(any(n in blob for n in ("alpha", "bravo", "charlie")),
+                        "the string field's content should appear in the dump")
+
 
 if __name__ == "__main__":
     unittest.main()

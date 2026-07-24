@@ -6,7 +6,24 @@ take a parsing dependency (DESIGN Decision 1); this module is the single place
 that does so, so swapping in pyelftools at Level 2 stays a local change.
 """
 
+import shutil
 import subprocess
+
+
+def demangle(name):
+    """Demangle a C++ linker symbol with c++filt, or return it unchanged.
+
+    e.g. `_ZTV6Widget` -> `vtable for Widget`. Falls back to the raw name if
+    c++filt is missing or fails, so callers never need to guard.
+    """
+    filt = shutil.which("c++filt")
+    if not filt:
+        return name
+    try:
+        out = subprocess.run([filt, name], capture_output=True, text=True)
+    except OSError:
+        return name
+    return out.stdout.strip() if out.returncode == 0 else name
 
 
 def _readelf(path, *flags):

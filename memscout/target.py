@@ -12,9 +12,15 @@ later phases; Phase 2.1 provides the read/enumerate/scan core.
 
 import struct
 
-from . import decoders, maps
+from . import decoders, elf, maps
 from .memory import MemorySource
 from .symbols import SymbolResolver
+
+# Slot values in this range are treated as candidate userspace pointers when
+# annotating an object dump (below the x86-64 canonical user ceiling, above the
+# first page). Used only for display hints, never for correctness.
+_PTR_LO = 0x1000
+_PTR_HI = 0x800000000000
 
 
 # Regions larger than this are almost never the C++ malloc heap; skipping them
@@ -34,6 +40,7 @@ class Target:
         self._mem = MemorySource(pid)
         self._modules = None            # built lazily on first .modules access
         self._resolver = SymbolResolver()
+        self._vtable_maps = {}          # module path -> {runtime vptr needle: class name}
 
     # --- lifecycle ---
 
@@ -114,10 +121,12 @@ class Target:
         return out
 
     def dump_slots(self, base, count=12):
-        """Yield formatted lines for the first `count` 8-byte slots at `base`.
+        """Yield plain lines for the first `count` 8-byte slots at `base`.
 
         Reveals a raw object layout (vptrs, small ints, string pointers) when the
         field offsets aren't known yet, guessing UTF-16 strings behind pointers.
+        Kept format-stable (matches procmem-vptr-scan.py); for richer, class-aware
+        annotation use dump_object().
         """
         obj = self._mem.read(base, count * 8)
         if not obj:
@@ -126,7 +135,7 @@ class Target:
         for o in range(0, count * 8, 8):
             val = int.from_bytes(obj[o:o + 8], "little")
             hint = ""
-            if 0x1000 < val < 0x800000000000:
+            if _PTR_LO < val < _PTR_HI:
                 s = self._mem.read(val, 32)
                 if s:
                     text = s.decode("utf-16-le", "ignore")
@@ -134,6 +143,90 @@ class Target:
                     if len(printable) >= 3:
                         hint = "  -> u16 %r" % printable[:24]
             yield "  +%3d: %#018x%s" % (o, val, hint)
+
+    # --- object content printing (class id + annotated slots) ---
+
+    def identify_class(self, base):
+        """Class name of the object at `base` from its vptr, or None.
+
+        Reads the object's vtable pointer and reverse-resolves it against the
+        vtable symbols of the module it points into (e.g. -> "mozilla::dom::WakeLock").
+        Returns None if the slot isn't a known vtable pointer.
+        """
+        vptr = self.read_ptr(base)
+        if not vptr:
+            return None
+        module = self.modules.for_addr(vptr)
+        if module is None:
+            return None
+        return self._vtable_map(module).get(vptr)
+
+    def dump_object(self, base, count=12):
+        """Yield annotated lines for the first `count` 8-byte slots at `base`.
+
+        Each slot shows its raw value plus a best-effort hint: a string behind the
+        pointer (ASCII or UTF-16), a vtable pointer named by its class, or a plain
+        pointer into a known module as `module+offset`. Purely descriptive.
+        """
+        obj = self._mem.read(base, count * 8)
+        if not obj:
+            yield "  <unreadable object>"
+            return
+        for o in range(0, count * 8, 8):
+            val = int.from_bytes(obj[o:o + 8], "little")
+            ann = self._annotate(val)
+            yield "  +%3d: %#018x%s" % (o, val, ("  " + ann) if ann else "")
+
+    def _annotate(self, value):
+        """A display hint for a slot value: string, vtable class, or module+offset."""
+        if not (_PTR_LO < value < _PTR_HI):
+            return None
+        text = self._string_at(value)
+        if text:
+            return "-> " + text
+        module = self.modules.for_addr(value)
+        if module is None:
+            return None
+        cls = self._vtable_map(module).get(value)
+        if cls:
+            return "vtable " + cls
+        return "%s+%#x" % (module.name, value - module.load_bias)
+
+    def _string_at(self, addr):
+        """Return `ascii "..."` / `u16 "..."` if a readable string sits at addr, else None."""
+        data = self._mem.read(addr, 48)
+        if not data:
+            return None
+        end = data.find(b"\x00")
+        head = data[:end] if end != -1 else data
+        if len(head) >= 4 and all(32 <= b < 127 for b in head[:32]):
+            return 'ascii "%s"' % head[:40].decode("ascii", "replace")
+        printable = "".join(c for c in data.decode("utf-16-le", "ignore") if 32 <= ord(c) < 127)
+        if len(printable) >= 3:
+            return 'u16 "%s"' % printable[:40]
+        return None
+
+    def _vtable_map(self, module):
+        """Cached {runtime vptr needle -> class name} for one module's vtable symbols.
+
+        Inverts the module's `_ZTV*` symbols: each maps to the value an object of
+        that class stores at its vptr slot (symbol address + 16 header). Built once
+        per module (parses its symbol table; cached thereafter).
+        """
+        if module.path in self._vtable_maps:
+            return self._vtable_maps[module.path]
+        base = elf.load_vaddr(module.path) or 0
+        vmap = {}
+        for name, (vaddr, _size, _type) in elf.symbols(module.path).items():
+            if not name.startswith("_ZTV"):
+                continue
+            needle = module.load_bias + (vaddr - base) + 16
+            cls = elf.demangle(name)
+            if cls.startswith("vtable for "):
+                cls = cls[len("vtable for "):]
+            vmap[needle] = cls
+        self._vtable_maps[module.path] = vmap
+        return vmap
 
     # --- heap region scanning ---
 

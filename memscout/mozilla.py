@@ -10,11 +10,9 @@ Resolved Decision 1, vtables/globals come from debuginfod or local debug info.
 
 import bisect
 import os
-import shutil
-import subprocess
 import urllib.request
 
-from . import cache
+from . import cache, elf
 
 
 def debug_id(build_id):
@@ -70,15 +68,6 @@ def parse_sym(text):
     return by_name, funcs
 
 
-def _demangle(name):
-    """Demangle a C++ linker symbol with c++filt, or return it unchanged."""
-    filt = shutil.which("c++filt")
-    if not filt:
-        return name
-    out = subprocess.run([filt, name], capture_output=True, text=True)
-    return out.stdout.strip() if out.returncode == 0 else name
-
-
 class MozillaSymbols:
     """DebugInfoSource backed by Mozilla `.sym` files (functions/public symbols).
 
@@ -98,7 +87,7 @@ class MozillaSymbols:
         by_name, _ = self._table(module)
         if not by_name:
             return None
-        info = by_name.get(_demangle(name)) or by_name.get(name)
+        info = by_name.get(elf.demangle(name)) or by_name.get(name)
         if info is None:
             return None
         addr, size = info

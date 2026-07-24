@@ -31,6 +31,18 @@ def _cmd_resolve(args):
               % (sym.name, sym.addr, sym.kind, sym.size, sym.source, sym.module.name))
 
 
+def _cmd_dump(args):
+    """Print the content of the object at an address: class + annotated slots."""
+    with Target(args.pid) as t:
+        cls = t.identify_class(args.addr)
+        head = "object @ %#x" % args.addr
+        if cls:
+            head += "  (class %s)" % cls
+        print(head)
+        for line in t.dump_object(args.addr, count=args.count):
+            print(line)
+
+
 def _fmt_value(val):
     """Render a decoded field value for the scan listing: strings quoted, dicts compact."""
     if isinstance(val, str):
@@ -60,6 +72,11 @@ def _cmd_scan(args):
                 decoded = t.decode(base, args.fields)
                 cols = " ".join("%s=%s" % (n, _fmt_value(v)) for n, v in decoded.items())
                 print("  %#x  %s" % (base, cols))
+            elif args.annotate:
+                cls = t.identify_class(base)
+                print("object @ %#x%s" % (base, "  (class %s)" % cls if cls else ""))
+                for line in t.dump_object(base):
+                    print(line)
             else:
                 print("object @ %#x" % base)
                 for line in t.dump_slots(base):
@@ -97,7 +114,16 @@ def main(argv=None):
     p_scan.add_argument("--include-js", action="store_true", help="also scan JS/file-backed regions")
     p_scan.add_argument("--secondary-offset", type=int, default=16,
                         help="vtable header size; override for a multiply-inherited secondary base")
+    p_scan.add_argument("--annotate", action="store_true",
+                        help="for objects without field specs, print class-aware annotated slots")
     p_scan.set_defaults(func=_cmd_scan)
+
+    p_dump = sub.add_parser(
+        "dump", help="print an object's content at an address: class + annotated slots")
+    p_dump.add_argument("pid", type=int)
+    p_dump.add_argument("addr", type=lambda x: int(x, 0), help="object address (hex or decimal)")
+    p_dump.add_argument("--count", type=int, default=12, help="number of 8-byte slots to show")
+    p_dump.set_defaults(func=_cmd_dump)
 
     args = parser.parse_args(argv)
     return args.func(args)
