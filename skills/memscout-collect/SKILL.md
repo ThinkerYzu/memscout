@@ -17,12 +17,22 @@ memscout inspects the live internal state of a running Linux process **read-only
 `/proc/<pid>/mem`, never stopping it). Its main job is a **two-party workflow**:
 
 - **You (the developer)** have the symbols/debug info. You study the target, resolve
-  addresses and field offsets **offline**, and generate a small script + config.
+  addresses and field offsets **offline**, and generate **one self-contained script** with
+  the build-specific config baked in.
 - **The reporter** (a user hitting the bug) runs that script on their machine. It only
   **relocates + scans + decodes** — it needs no symbols, DWARF, `readelf`, or network.
 
 Everything symbol/DWARF-related happens on your side. The reporter runs one self-contained
 file. This skill walks you from source code to that shipped file.
+
+> **Ship one file, not two.** Prefer baking the config (module, offset, specs, build-id)
+> directly into the script as a literal, then bundling that into a single `.py`. A separate
+> `config.json` is a second thing to keep paired, version-match, and explain to the reporter —
+> and a mismatch between the two is a silent-wrong-data trap. The examples below take a config
+> argument to keep authoring and collection decoupled while you iterate, but the **shipped**
+> artifact should be one file the reporter runs with nothing else attached. Only split config
+> out when the reporter must run the *same* script against several builds/targets — then the
+> config is the only thing that varies, and pairing it is a deliberate choice, not an accident.
 
 Prerequisites: `pip install -e '.[authoring]'` (adds `pyelftools` for DWARF). The reporter
 needs only a stock Python 3.
@@ -121,22 +131,41 @@ python examples/author.py <pid> _ZTVN7mozilla3dom8WakeLockE \
 `wakelock.json` holds `{class, module, vtable_offset, build_id, field_specs}` — exactly what
 the reporter needs and nothing that requires symbols on their end.
 
-### 5. Generate the reporter script
+### 5. Generate the reporter script — one file
 
 Start from `examples/collect.py` (reporter-side: relocate → scan → decode → JSON-lines log,
 imports only `memscout.runtime`). Adapt it only if you need custom logging/sampling — its
-format and cadence are the script's job, not the framework's. Then bundle it into one file:
+format and cadence are the script's job, not the framework's.
 
-```bash
-memscout bundle examples/collect.py --minify -o collect_wakelock.py
+**Bake the config in, then bundle — so the reporter runs a single file.** Instead of leaving
+`collect.py` to read `wakelock.json` at runtime, embed that dict as a literal in your copy of
+the script (drop the config-file argument), then bundle:
+
+```python
+# collect_wakelock.py (before bundling): config baked in, no external file
+CONFIG = {
+    "class": "mozilla::dom::WakeLock",
+    "module": "libxul.so",
+    "vtable_offset": 0xNNNN,
+    "build_id": "…",                       # stamped + checked at run time
+    "field_specs": ["40:bool:mLocked", "48:nsstring:mTopic"],
+}
 ```
 
-Send **`collect_wakelock.py` + `wakelock.json`** to the reporter. They run, with a stock
-Python 3 and no memscout install:
+```bash
+memscout bundle collect_wakelock.py --minify -o collect_wakelock_bundled.py
+```
+
+Send the reporter **one file**. They run it with a stock Python 3 and no memscout install —
+no config to pair, no second download to keep in sync:
 
 ```bash
-python3 collect_wakelock.py <pid> wakelock.json --out wakelock.jsonl
+python3 collect_wakelock_bundled.py <pid> --out wakelock.jsonl
 ```
+
+(The `examples/author.py … > wakelock.json` step from step 4 is your authoring scratch: read
+those values, drop them into `CONFIG`, ship the one bundled file. Keep a separate `config.json`
+only for the multi-build case called out at the top.)
 
 They send back `wakelock.jsonl`. Analyze it (the first line is a `meta` record with the
 build-id match + object count; each following line is one object's decoded fields):
@@ -198,6 +227,10 @@ script. A reporter script uses only the surface above.
 
 ## Gotchas
 
+- **Ship one file.** Bake the config into the script and bundle to a single `.py`; don't hand
+  the reporter a script + a `config.json` to keep paired. Two files drift, get separated in
+  chat, and version-mismatch silently. Split config out only when one script must serve several
+  builds (see the note at the top).
 - **Reporter build must match.** Baked offsets are silently wrong on a different build.
   `collect.py` stamps and checks the build-id (`build_match` in the meta line) — heed it.
 - **Auto-detect picks the first module.** `resolve` without `--module` returns the first
