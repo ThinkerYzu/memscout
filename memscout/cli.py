@@ -20,6 +20,53 @@ def _cmd_modules(args):
             print("%-40s bias=%#014x build=%s  %s" % (m.name, m.load_bias, bid, span))
 
 
+def _cmd_resolve(args):
+    """Resolve one symbol to its runtime address and print where it came from."""
+    with Target(args.pid) as t:
+        sym = t.resolve(args.name, module=args.module)
+        if sym is None:
+            print("symbol %r not found" % args.name)
+            return 1
+        print("%s = %#x  (%s, size=%s, via %s) in %s"
+              % (sym.name, sym.addr, sym.kind, sym.size, sym.source, sym.module.name))
+
+
+def _fmt_value(val):
+    """Render a decoded field value for the scan listing: strings quoted, dicts compact."""
+    if isinstance(val, str):
+        return repr(val)
+    if isinstance(val, dict):
+        return "{%s}" % ", ".join("%s=%s" % (k, v) for k, v in val.items())
+    return str(val)
+
+
+def _cmd_scan(args):
+    """Find live instances of a class by its vtable, decoding named fields.
+
+    Mirrors scripts/procmem-vptr-scan.py's output so the two can be diffed.
+    """
+    with Target(args.pid) as t:
+        sym = t.resolve(args.symbol, module=args.module)
+        if sym is None:
+            raise SystemExit("symbol %r not found" % args.symbol)
+        needle = sym.addr + args.secondary_offset
+        regions = list(t.scan_regions(args.include_js))
+        bases = t.find_objects(needle, include_js=args.include_js, limit=args.max)
+        scanned_mb = sum(hi - lo for lo, hi in regions) / 1048576.0
+        print("vptr %#x (from %s): %d hit(s) across %.1fMB"
+              % (needle, sym.module.path, len(bases), scanned_mb))
+        for base in bases:
+            if args.fields:
+                decoded = t.decode(base, args.fields)
+                cols = " ".join("%s=%s" % (n, _fmt_value(v)) for n, v in decoded.items())
+                print("  %#x  %s" % (base, cols))
+            else:
+                print("object @ %#x" % base)
+                for line in t.dump_slots(base):
+                    print(line)
+        print("=> %d object(s)" % len(bases))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="memscout",
@@ -31,6 +78,26 @@ def main(argv=None):
     p_modules = sub.add_parser("modules", help="list loaded ELF modules")
     p_modules.add_argument("pid", type=int)
     p_modules.set_defaults(func=_cmd_modules)
+
+    p_resolve = sub.add_parser("resolve", help="resolve a symbol to a runtime address")
+    p_resolve.add_argument("pid", type=int)
+    p_resolve.add_argument("name", help="symbol name (mangled linker symbol)")
+    p_resolve.add_argument("--module", help="restrict to this module (basename or suffix)")
+    p_resolve.set_defaults(func=_cmd_resolve)
+
+    p_scan = sub.add_parser(
+        "scan", help="find live instances of a class by vtable and decode fields",
+        epilog="Field types: u8 u16 u32 u64 i32 i64 bool ptr nsstring nscstring "
+               "nstarray refptr atomic:T pldhash mhashtable[:size]. No fields dumps raw slots.")
+    p_scan.add_argument("pid", type=int)
+    p_scan.add_argument("symbol", help="vtable linker symbol, e.g. _ZTVN7mozilla3dom8WakeLockE")
+    p_scan.add_argument("fields", nargs="*", help="OFF:TYPE:NAME, repeatable")
+    p_scan.add_argument("--module", help="module defining the vtable (basename or suffix)")
+    p_scan.add_argument("--max", type=int, default=1000, help="stop after this many hits")
+    p_scan.add_argument("--include-js", action="store_true", help="also scan JS/file-backed regions")
+    p_scan.add_argument("--secondary-offset", type=int, default=16,
+                        help="vtable header size; override for a multiply-inherited secondary base")
+    p_scan.set_defaults(func=_cmd_scan)
 
     args = parser.parse_args(argv)
     return args.func(args)

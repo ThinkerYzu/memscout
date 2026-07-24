@@ -59,3 +59,62 @@ def load_vaddr(path):
         if int(cols[1], 16) == 0:
             return int(cols[2], 16)
     return None
+
+
+def symbols(path):
+    """Parse the ELF's symbol tables into {name: (vaddr, size, kind)}.
+
+    Reads both .symtab and .dynsym via `readelf -sW`. Undefined symbols (Ndx UND)
+    are skipped, and the first defining entry for a name wins (so .symtab's fuller
+    definitions aren't overwritten by a later duplicate). Versioned dynamic names
+    like `memcpy@@GLIBC_2.14` are also indexed under their bare name `memcpy`, so a
+    caller can resolve either form. Returns {} if the file can't be read.
+    """
+    out = _readelf(path, "-sW")
+    if out is None:
+        return {}
+    table = {}
+    for line in out.splitlines():
+        cols = line.split()
+        # Num:  Value  Size  Type  Bind  Vis  Ndx  Name
+        if len(cols) < 8 or not cols[0].endswith(":"):
+            continue
+        if cols[6] == "UND":                    # undefined import; nothing to place
+            continue
+        name = cols[7]
+        if name in table:
+            continue
+        try:
+            vaddr = int(cols[1], 16)
+            size = int(cols[2], 0)
+        except ValueError:
+            continue
+        entry = (vaddr, size, cols[3])          # cols[3] is the ELF type (FUNC/OBJECT/...)
+        table[name] = entry
+        bare = name.split("@", 1)[0]            # strip @@VERSION / @VERSION
+        if bare != name and bare not in table:
+            table[bare] = entry
+    return table
+
+
+def debuglink(path):
+    """Return the filename in the ELF's .gnu_debuglink section, or None.
+
+    The section holds a NUL-terminated debug-file name followed by a CRC; we dump
+    it with `readelf -x` and read bytes up to the first NUL. Used to locate a
+    separate debug file when there's no build-id path.
+    """
+    out = _readelf(path, "-x", ".gnu_debuglink")
+    if out is None:
+        return None
+    raw = bytearray()
+    for line in out.splitlines():
+        cols = line.split()
+        # Hex-dump rows look like: 0xADDR  <up to 4 hex words>  <ascii gutter>
+        if not cols or not cols[0].startswith("0x"):
+            continue
+        for word in cols[1:5]:
+            if len(word) == 8 and all(c in "0123456789abcdefABCDEF" for c in word):
+                raw += bytes.fromhex(word)
+    name = bytes(raw).split(b"\x00", 1)[0]
+    return name.decode("ascii", "replace") if name else None

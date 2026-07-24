@@ -100,21 +100,22 @@ def parse(pid):
     order = []                 # paths in first-seen order, for stable output
     ranges = {}                # path -> list[(lo, hi)]
     bias = {}                  # path -> load bias (from the offset-0 mapping)
-    for line in open("/proc/%d/maps" % pid):
-        parts = line.split()
-        if len(parts) < 6:
-            continue
-        path = parts[5]
-        if not path.startswith("/"):
-            continue
-        lo, hi = (int(x, 16) for x in parts[0].split("-"))
-        file_off = int(parts[2], 16)
-        if path not in ranges:
-            order.append(path)
-            ranges[path] = []
-        ranges[path].append((lo, hi))
-        if file_off == 0 and path not in bias:
-            bias[path] = lo
+    with open("/proc/%d/maps" % pid) as maps_file:
+        for line in maps_file:
+            parts = line.split()
+            if len(parts) < 6:
+                continue
+            path = parts[5]
+            if not path.startswith("/"):
+                continue
+            lo, hi = (int(x, 16) for x in parts[0].split("-"))
+            file_off = int(parts[2], 16)
+            if path not in ranges:
+                order.append(path)
+                ranges[path] = []
+            ranges[path].append((lo, hi))
+            if file_off == 0 and path not in bias:
+                bias[path] = lo
 
     modules = []
     for path in order:

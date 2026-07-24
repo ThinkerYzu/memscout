@@ -12,8 +12,9 @@ later phases; Phase 2.1 provides the read/enumerate/scan core.
 
 import struct
 
-from . import maps
+from . import decoders, maps
 from .memory import MemorySource
+from .symbols import SymbolResolver
 
 
 # Regions larger than this are almost never the C++ malloc heap; skipping them
@@ -32,6 +33,7 @@ class Target:
         self.pid = pid
         self._mem = MemorySource(pid)
         self._modules = None            # built lazily on first .modules access
+        self._resolver = SymbolResolver()
 
     # --- lifecycle ---
 
@@ -74,6 +76,65 @@ class Target:
         """The loaded module named `name` (basename or path suffix), or None."""
         return self.modules.by_name(name)
 
+    # --- symbol resolution ---
+
+    def resolve(self, name, module=None):
+        """Resolve a symbol to a Symbol (runtime address + provenance), or None.
+
+        `module` may be a module name, a Module, or None to search every module.
+        """
+        if isinstance(module, str):
+            module = self.module(module)
+        return self._resolver.resolve(self.modules, name, module)
+
+    def vtable(self, name, module=None, secondary_offset=16):
+        """Runtime value objects store at their vptr slot for the class `name`.
+
+        That is the vtable symbol's address past its two header words (offset-to-top
+        and typeinfo) -- i.e. +16 for a primary base. Pass a class's sub-vtable
+        offset via secondary_offset for a multiply-inherited secondary base.
+        Returns the needle address, or None if the vtable symbol can't be resolved.
+        """
+        sym = self.resolve(name, module)
+        return None if sym is None else sym.addr + secondary_offset
+
+    # --- field decoding ---
+
+    def decode(self, base, fields):
+        """Decode named fields of the object at `base` into {name: value}.
+
+        `fields` is a space-separated string of `OFF:TYPE:NAME` specs, or a list
+        of them. Field types come from the decoder registry (memscout.decoders).
+        """
+        specs = fields.split() if isinstance(fields, str) else fields
+        out = {}
+        for spec in specs:
+            name, value = decoders.decode_field(self, base, spec)
+            out[name] = value
+        return out
+
+    def dump_slots(self, base, count=12):
+        """Yield formatted lines for the first `count` 8-byte slots at `base`.
+
+        Reveals a raw object layout (vptrs, small ints, string pointers) when the
+        field offsets aren't known yet, guessing UTF-16 strings behind pointers.
+        """
+        obj = self._mem.read(base, count * 8)
+        if not obj:
+            yield "  <unreadable object>"
+            return
+        for o in range(0, count * 8, 8):
+            val = int.from_bytes(obj[o:o + 8], "little")
+            hint = ""
+            if 0x1000 < val < 0x800000000000:
+                s = self._mem.read(val, 32)
+                if s:
+                    text = s.decode("utf-16-le", "ignore")
+                    printable = "".join(c for c in text if 32 <= ord(c) < 127)
+                    if len(printable) >= 3:
+                        hint = "  -> u16 %r" % printable[:24]
+            yield "  +%3d: %#018x%s" % (o, val, hint)
+
     # --- heap region scanning ---
 
     def scan_regions(self, include_js=False):
@@ -83,24 +144,25 @@ class Target:
         mappings), so by default we skip the JS GC heap and file-backed mappings
         and any region over 256 MB. Pass include_js=True to widen the net.
         """
-        for line in open("/proc/%d/maps" % self.pid):
-            parts = line.split()
-            if len(parts) < 2 or "w" not in parts[1]:
-                continue
-            name = parts[5] if len(parts) > 5 else ""
-            if not include_js and ("js-gc-heap" in name or name.startswith("/")):
-                continue
-            lo, hi = (int(x, 16) for x in parts[0].split("-"))
-            if hi - lo > _MAX_SCAN_REGION:
-                continue
-            yield lo, hi
+        with open("/proc/%d/maps" % self.pid) as maps_file:
+            for line in maps_file:
+                parts = line.split()
+                if len(parts) < 2 or "w" not in parts[1]:
+                    continue
+                name = parts[5] if len(parts) > 5 else ""
+                if not include_js and ("js-gc-heap" in name or name.startswith("/")):
+                    continue
+                lo, hi = (int(x, 16) for x in parts[0].split("-"))
+                if hi - lo > _MAX_SCAN_REGION:
+                    continue
+                yield lo, hi
 
-    def find_pattern(self, needle8, include_js=False, limit=1000):
+    def find_objects(self, needle8, include_js=False, limit=1000):
         """Return addresses where the 8-byte value `needle8` appears in scanned regions.
 
         Reads each writable region once and scans it in-process (fast), stopping
         at `limit` hits. The primary use is locating objects by their vtable
-        pointer, but any 8-byte needle works.
+        pointer (see vtable()), but any 8-byte needle works.
         """
         pat = struct.pack("<Q", needle8)
         hits = []
