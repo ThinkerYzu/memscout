@@ -160,6 +160,42 @@ grep '"type": "object"' wakelock.jsonl | jq .
 | `memscout bundle <script> [--minify] -o out.py` | developer | inline runtime → one self-contained reporter file |
 | `examples/collect.py` (bundled) | reporter | relocate → scan → decode → JSON-lines log |
 
+## Reporter API — what a collection script may call
+
+A reporter script imports only the self-contained runtime and drives a `Reporter`. These are the
+**only** primitives available on the reporter side (no symbols, DWARF, or network):
+
+```python
+from memscout.runtime import Reporter, register
+
+with Reporter(pid) as r:                       # attach read-only; auto-closes
+    addr   = r.relocate(module, offset)        # (module, offset) -> live addr | None
+    bases  = r.find_objects(needle)            # [addr, ...] where the 8-byte needle appears
+    fields = r.decode(base, "8:bool:mActive 12:i32:mId")   # -> {name: value}
+    # raw / typed reads (None if unmapped, never raises):
+    r.read(addr, n)          # -> bytes | None
+    r.read_uint(addr, size)  # -> int | None
+    r.read_ptr(addr)         # -> int | None
+    # modules:
+    r.modules                # ModuleMap: iterate; .by_name(name), .for_addr(addr)
+    r.module(name)           # Module | None  (.name .path .load_bias .build_id .ranges)
+    r.scan_regions()         # -> (lo, hi) writable heap regions
+    r.dump_slots(base)       # -> lines: raw 8-byte slots (layout aid, no symbols)
+```
+
+**Find objects by vtable:** `needle = r.relocate(module, vtable_offset) + 16`, then
+`r.find_objects(needle)`.
+
+**Custom decoder** — register a token you then use in specs (`fn(mem, base, off, arg) -> value`):
+
+```python
+register("mykind", lambda mem, base, off, arg: mem.read_uint(base + off, 4))
+```
+
+**Not on the reporter side:** `resolve`, `vtable`, `identify_class`, `dump_object` — these need
+symbols and live on the developer-side `Target` (a `Reporter` subclass), *not* in a bundled
+script. A reporter script uses only the surface above.
+
 ## Gotchas
 
 - **Reporter build must match.** Baked offsets are silently wrong on a different build.
