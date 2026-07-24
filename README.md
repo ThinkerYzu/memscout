@@ -2,13 +2,46 @@
 
 A lightweight, read-only runtime data-collection framework for live Linux processes.
 
-Inspect the internal state of a running application or service by reading its
-memory directly through `/proc/<pid>/mem` — no debugger, never stopping the target.
+Inspect the internal state of a running application or service by reading its memory directly
+through `/proc/<pid>/mem` — no debugger, and the target is never stopped. memscout is a toolbox
+of read-only primitives (attach, module map, symbol resolution, memory/heap scan, typed field
+decoding); scripts compose them to answer a specific runtime question.
 
-    memscout modules <pid>                      # loaded ELF modules + build-ids
-    memscout resolve <pid> <symbol>             # symbol -> runtime address
-    memscout scan <pid> <vtable-symbol> [OFF:TYPE:NAME ...]   # find + decode objects
-    memscout dump <pid> <addr>                  # print an object's class + annotated slots
+## CLI
 
-Project docs (spec, design, handoff) live in the task repo under
-`proj_docs/memscout/`.
+    memscout modules  <pid>                                    # loaded ELF modules + build-ids
+    memscout resolve  <pid> <symbol>                           # symbol -> runtime address
+    memscout scan     <pid> <vtable-symbol> [OFF:TYPE:NAME ...] # find + decode live objects
+    memscout dump     <pid> <addr> [OFF:TYPE:NAME ...]         # an object's class + fields/slots
+    memscout offsets  <debuginfo-elf> <type> [field ...]       # (developer) DWARF -> spec strings
+
+As a library: `import memscout; with memscout.Target(pid) as t: ...` — everything the CLI does is
+available programmatically (`resolve`, `relocate`, `find_objects`, `decode`, `identify_class`, …).
+
+## Remote reporter → developer workflow
+
+memscout's primary use case is collecting runtime info from a machine you can't touch:
+
+- A **reporter** runs a small script that **relocates** developer-supplied `(module, offset)`
+  addresses, **scans** the heap, **decodes** fields, and writes a log — needing no symbols, DWARF,
+  or symbol server.
+- A **developer** (with an AI agent) authors that script for the reporter's exact build, resolving
+  symbols and field offsets offline, and analyzes the log.
+
+See [`examples/`](examples/) for a runnable end-to-end walkthrough (`author.py` → `collect.py`).
+
+## Install
+
+    pip install -e .                 # runtime + CLI (standard library only)
+    pip install -e .[authoring]      # + pyelftools, for the developer-side `offsets` (Level 2)
+
+The runtime/reporter core has no third-party dependencies; only the DWARF authoring aid needs
+`pyelftools`. Requires Linux, ELF, x86-64, and `readelf` (binutils) for symbol resolution.
+
+## Tests
+
+    ./run-tests.sh        # or: make test
+
+## Docs
+
+Full spec, design, and handoff live in the task repo under `proj_docs/memscout/`.
