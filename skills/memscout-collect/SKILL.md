@@ -94,7 +94,9 @@ readelf -sW "$LIB" | awk '$8 ~ /^_ZTV/ {print $8}' \
 memscout resolve <pid> _ZTVN7mozilla3dom8WakeLockE --module libxul.so
 #   -> _ZTVN...E = 0x...  =  libxul.so+0xNNNN  (vtable, ...)
 
-# d) get field specs from DWARF (needs a build with debug info; see step 4 for stripped)
+# d) get field offsets from DWARF (needs a build with debug info; see step 4 for stripped).
+#    `memscout offsets` (pyelftools) suits small/medium binaries; for a huge one like Firefox
+#    libxul it runs out of memory — use gdb instead (see "Big DWARF" note below).
 memscout offsets "$LIB" mozilla::dom::WakeLock mLocked mHidden mTopic
 #   -> 40:bool:mLocked  41:bool:mHidden  48:nsstring:mTopic
 
@@ -117,6 +119,30 @@ address, `nstarray` gives `{length, data}`, hashtables give `{count, capacity, l
 see [`REFERENCE.md`](REFERENCE.md); knowing the shape is essential when a field points at more
 to read.
 
+> **Big DWARF (Firefox `libxul`)? Use gdb, not `memscout offsets`.** pyelftools loads whole
+> compilation units into memory and does not scale to libxul-sized debug info — on Firefox it
+> exhausts memory or takes far too long. gdb reads DWARF **lazily** — `ptype /o` touches only
+> the one type — so it gives you member offsets where `memscout offsets` can't:
+>
+> ```bash
+> gdb -batch -ex 'ptype /o mozilla::dom::WakeLock' /path/to/libxul.so   # a -g / .debug ELF
+> ```
+>
+> ```
+> /* offset  |  size */  type = class mozilla::dom::WakeLock : public nsISupports {
+> /*     40  |     1  */    bool mLocked;
+> /*     41  |     1  */    bool mHidden;
+> /*     48  |    16  */    nsString mTopic;
+> ```
+>
+> Read the byte offset from the left `/* offset */` column, map each member's C++ type to a
+> decoder token above (`bool`→`bool`, `int32_t`→`i32`, `nsString`→`nsstring`, `nsCString`→
+> `nscstring`, `RefPtr<T>`/`nsCOMPtr<T>`→`refptr`, `mozilla::Atomic<T>`→`atomic:<T>`,
+> `nsTArray<T>`→`nstarray`, …), and hand-write the `OFF:TYPE:NAME` specs. That's exactly what
+> `memscout offsets` emits — you're just reading the layout with a tool that scales. (`ptype /o`
+> needs gdb ≥ 9. For a base-class member, follow the base's own `ptype /o` and add the base
+> offset gdb prints.) Then feed those specs to `author.py` **by hand** (no `--debuginfo`).
+
 ### 4. Collect the spec strings and locations (the config)
 
 The config is build-specific. It must be resolved against **the reporter's exact build**,
@@ -130,12 +156,22 @@ not just your local one:
   **debuginfod** and the **Mozilla symbol server**, and `offsets` reads a debug ELF you
   fetch for that build. Resolve/compute against *that*.
 
-Assemble the config with the authoring helper (it resolves the vtable and emits the config):
+Assemble the config with the authoring helper. It resolves the vtable and emits the config;
+`--debuginfo/--type` generates the field specs from DWARF **via pyelftools**:
 
 ```bash
 python examples/author.py <pid> _ZTVN7mozilla3dom8WakeLockE \
     --debuginfo /path/to/libxul.so --type mozilla::dom::WakeLock \
     --fields mLocked mHidden mTopic > wakelock.json
+```
+
+**For Firefox (or any large binary), skip `--debuginfo`** — pyelftools won't handle libxul's
+DWARF. Get the offsets from gdb's `ptype /o` (the "Big DWARF" note in step 3), hand-write the
+specs, and pass them positionally so `author.py` only resolves the vtable:
+
+```bash
+python examples/author.py <pid> _ZTVN7mozilla3dom8WakeLockE \
+    40:bool:mLocked 41:bool:mHidden 48:nsstring:mTopic > wakelock.json
 ```
 
 `wakelock.json` holds `{class, module, vtable_offset, build_id, field_specs}` — exactly what
@@ -255,9 +291,14 @@ script. A reporter script uses only the surface above.
 - **Read-only, safe to run.** The script never writes or stops the process — reassure the
   reporter, and keep the field set minimal and the script auditable (bundle without
   `--minify` if they want to read it).
+- **Big DWARF (Firefox)?** `memscout offsets` / `author.py --debuginfo` use pyelftools, which
+  loads whole compilation units and **runs out of memory on libxul-sized debug info**. Get
+  offsets from gdb instead — `gdb -batch -ex 'ptype /o <Type>' <debug-elf>` reads DWARF lazily
+  (only that type) — then hand-write the specs (step 3 "Big DWARF" note). `resolve`/`scan`/
+  `modules` use the symbol table, not DWARF, so they're fine on Firefox as-is.
 - **Stripped local build?** You can't `offsets`/`resolve` locally — fetch the build's debug
   info via debuginfod / the Mozilla symbol server (memscout does this for `resolve`; hand a
-  fetched debug ELF to `offsets`).
+  fetched debug ELF to `offsets`, or open it in gdb for `ptype /o`).
 
 ## See also
 

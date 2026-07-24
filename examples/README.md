@@ -121,6 +121,12 @@ The pattern is identical against a real Firefox; only two things change:
 
    This needs `pyelftools` (`pip install memscout[authoring]`) and runs only on the developer's
    side; `collect.py` is unchanged.
+
+   > **Firefox-sized DWARF:** `memscout offsets`/`--debuginfo` use pyelftools, which loads whole
+   > compilation units and **runs out of memory on `libxul`**. For Firefox, read offsets with gdb
+   > instead — `gdb -batch -ex 'ptype /o mozilla::dom::WakeLock' libxul.so` reads DWARF lazily —
+   > then pass the hand-written `OFF:TYPE:NAME` specs to `author.py` positionally (no
+   > `--debuginfo`). See the `memscout-collect` skill's "Big DWARF" note for the type→token map.
 2. **Resolving on a stripped build.** Release Firefox is stripped, so `author.py`'s `resolve`
    leans on the remote sources (debuginfod / the Mozilla symbol server) that memscout already
    integrates — still entirely on the developer's side. The reporter's `collect.py` is unchanged.
