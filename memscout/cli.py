@@ -6,6 +6,8 @@ so anything the CLI does is available to a plain `import memscout` script.
 """
 
 import argparse
+import os
+import sys
 
 from . import __version__
 from .target import Target
@@ -55,6 +57,19 @@ def _cmd_dump(args):
         else:
             for line in t.dump_object(args.addr, count=args.count):
                 print(line)
+
+
+def _cmd_bundle(args):
+    """Inline the reporter runtime into a script -> one self-contained file (or stdout)."""
+    from . import bundle
+    text = bundle.bundle(args.script)
+    if args.out:
+        with open(args.out, "w") as f:
+            f.write(text)
+        os.chmod(args.out, 0o755)
+        print("wrote self-contained script to %s" % args.out)
+    else:
+        sys.stdout.write(text)
 
 
 def _cmd_offsets(args):
@@ -162,6 +177,14 @@ def main(argv=None):
     p_offsets.add_argument("type", help="C++ type name, qualified (e.g. mozilla::dom::WakeLock)")
     p_offsets.add_argument("fields", nargs="*", help="member names to emit (default: all)")
     p_offsets.set_defaults(func=_cmd_offsets)
+
+    p_bundle = sub.add_parser(
+        "bundle", help="inline the reporter runtime into a script -> one self-contained file",
+        epilog="The script should import primitives `from memscout.runtime import ...`; that "
+               "import is stripped and the runtime inlined, so the output runs on a stock Python.")
+    p_bundle.add_argument("script", help="developer's collection script (imports memscout.runtime)")
+    p_bundle.add_argument("-o", "--out", help="output file (default: stdout); made executable")
+    p_bundle.set_defaults(func=_cmd_bundle)
 
     args = parser.parse_args(argv)
     return args.func(args)

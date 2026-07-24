@@ -10,9 +10,13 @@ class's `(module, offset)` and field specs), it:
   4. writes a JSON-lines log to share back with the developer.
 
 It performs NO symbol resolution and needs no DWARF, readelf, or symbol server --
-only the module map, memory reads, and the baked-in constants from the config.
+only the module map, memory reads, and the baked-in constants from the config. It
+imports only `memscout.runtime`, so `memscout bundle collect.py -o out.py` turns it
+into one self-contained file a reporter runs with a stock Python:
 
-    python collect.py <pid> config.json [--out sessions.jsonl]
+    python collect.py <pid> config.json [--out sessions.jsonl]      # during development
+    memscout bundle collect.py -o collect_bundled.py               # ship one file
+    python collect_bundled.py <pid> config.json                    # reporter runs this
 
 The log's first line is a `meta` record (class, module, expected vs. actual build-id,
 object count); each following line is one object's decoded fields. If the reporter's
@@ -24,14 +28,14 @@ import argparse
 import json
 import time
 
-import memscout
+from memscout.runtime import Reporter
 
 
 def collect(pid, config, out_path):
     """Run the reporter-side collection and write a JSON-lines log. Returns (count, build_ok)."""
     module = config["module"]
     specs = config["field_specs"]
-    with memscout.Target(pid) as t:
+    with Reporter(pid) as t:
         mod = t.module(module)
         if mod is None:
             raise SystemExit("module %r is not loaded in pid %d" % (module, pid))
