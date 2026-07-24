@@ -86,8 +86,18 @@ grep '"type": "object"' /tmp/sessions.jsonl | jq 'select(.mActive==1) | {mId, mU
 The pattern is identical against a real Firefox; only two things change:
 
 1. **The class and its offsets.** Use a real vtable symbol (e.g. `_ZTVN7mozilla3dom8WakeLockE`)
-   and the field offsets for that build. Today you supply the offsets from knowledge of the
-   layout; the planned Level 2 tool will generate them from DWARF.
+   and the field offsets for that build. Generate the offsets from DWARF with the Level 2 tool
+   instead of by hand:
+
+   ```bash
+   # build with -g (or use a .debug file) so it carries DWARF, then:
+   python author.py $PID _ZTV7Session --debuginfo /tmp/demo_target_g --type Session \
+       --fields mActive mId mRequests > /tmp/session.json
+   # or standalone:  memscout offsets /tmp/demo_target_g Session mActive mId mRequests
+   ```
+
+   This needs `pyelftools` (`pip install memscout[authoring]`) and runs only on the developer's
+   side; `collect.py` is unchanged.
 2. **Resolving on a stripped build.** Release Firefox is stripped, so `author.py`'s `resolve`
    leans on the remote sources (debuginfod / the Mozilla symbol server) that memscout already
    integrates — still entirely on the developer's side. The reporter's `collect.py` is unchanged.
