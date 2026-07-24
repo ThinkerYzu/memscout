@@ -1,5 +1,7 @@
 # memscout
 
+[![CI](https://github.com/ThinkerYzu/memscout/actions/workflows/ci.yml/badge.svg)](https://github.com/ThinkerYzu/memscout/actions/workflows/ci.yml)
+
 A lightweight, read-only runtime data-collection framework for live Linux processes.
 
 Inspect the internal state of a running application or service by reading its memory directly
@@ -57,6 +59,11 @@ The runtime/reporter core has no third-party dependencies; only the DWARF author
 ## Docs
 
 Full spec, design, and handoff live in the task repo under `proj_docs/memscout/`.
+
+## Releasing
+
+CI runs the suite on every push/PR; pushing a `v*` tag builds and publishes a GitHub Release.
+See [RELEASING.md](RELEASING.md).
 
 ## License
 
