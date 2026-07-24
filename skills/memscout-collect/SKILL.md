@@ -179,5 +179,7 @@ grep '"type": "object"' wakelock.jsonl | jq .
 
 ## See also
 
-- `examples/README.md` — a runnable end-to-end walkthrough on a bundled demo app.
-- `../../proj_docs/memscout/SPEC.md` — the full workflow spec and requirements.
+- `examples/README.md` (repo root) — a runnable end-to-end walkthrough on a bundled demo app.
+- `examples/author.py` and `examples/collect.py` — the developer- and reporter-side scripts this
+  skill drives.
+- The repo `README.md` — CLI overview and the reporter → developer workflow in brief.

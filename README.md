@@ -35,11 +35,12 @@ memscout's primary use case is collecting runtime info from a machine you can't 
 
 See [`examples/`](examples/) for a runnable end-to-end walkthrough (`author.py` → `collect.py`).
 
-**Working with an AI agent?** This repo ships a Claude Code skill,
-[`.claude/skills/memscout-collect`](.claude/skills/memscout-collect/SKILL.md), that teaches the
-full authoring flow — study the target class, pick objects/fields, verify with the CLI, gather
-the `(module, offset)` + specs for the build, and generate the reporter's script. Open the repo
-in Claude Code and it's available automatically.
+**Working with an AI agent?** This repo ships an agent skill,
+[`skills/memscout-collect/SKILL.md`](skills/memscout-collect/SKILL.md), that teaches the full
+authoring flow — study the target class, pick objects/fields, verify with the CLI, gather the
+`(module, offset)` + specs for the build, and generate the reporter's script. Point your agent at
+it, or make it an auto-discovered Claude Code skill by symlinking it in:
+`mkdir -p .claude/skills && ln -s ../../skills/memscout-collect .claude/skills/`.
 
 ## Install
 
