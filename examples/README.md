@@ -104,6 +104,9 @@ The pattern is identical against a real Firefox; only two things change:
 
 ## Notes
 
+- The two config pieces have direct CLI equivalents you can read off by hand:
+  `memscout resolve <pid> <symbol>` prints the `(module, offset)` (`author.py` computes the same),
+  and `memscout offsets <debuginfo> <type> [fields...]` prints the `field_specs`.
 - `collect.py` is intentionally a **toolbox composition**, not a framework feature: the log
   format, the one-shot-vs-sampling choice, and the build-id check are all the script's own
   decisions. Copy it and adapt it per investigation.

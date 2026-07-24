@@ -10,7 +10,7 @@ decoding); scripts compose them to answer a specific runtime question.
 ## CLI
 
     memscout modules  <pid>                                    # loaded ELF modules + build-ids
-    memscout resolve  <pid> <symbol>                           # symbol -> runtime address
+    memscout resolve  <pid> <symbol> [--module NAME]           # symbol -> addr + module+offset
     memscout scan     <pid> <vtable-symbol> [OFF:TYPE:NAME ...] # find + decode live objects
     memscout dump     <pid> <addr> [OFF:TYPE:NAME ...]         # an object's class + fields/slots
     memscout offsets  <debuginfo-elf> <type> [field ...]       # (developer) DWARF -> spec strings
@@ -26,7 +26,9 @@ memscout's primary use case is collecting runtime info from a machine you can't 
   addresses, **scans** the heap, **decodes** fields, and writes a log — needing no symbols, DWARF,
   or symbol server.
 - A **developer** (with an AI agent) authors that script for the reporter's exact build, resolving
-  symbols and field offsets offline, and analyzes the log.
+  symbols and field offsets offline, and analyzes the log. The two authoring commands line up with
+  what the reporter needs: `memscout resolve` prints the `(module, offset)` to relocate, and
+  `memscout offsets` prints the field specs to decode.
 
 See [`examples/`](examples/) for a runnable end-to-end walkthrough (`author.py` → `collect.py`).
 
