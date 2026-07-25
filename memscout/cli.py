@@ -72,40 +72,55 @@ def _cmd_bundle(args):
         sys.stdout.write(text)
 
 
-# One-line description per decoder token, for `memscout decoders`. The token *list*
-# comes from the live registry (runtime.registered_tokens), so it can't drift; this only
-# annotates what's there. Tokens without an entry still print (flagged), so a newly
-# registered decoder shows up here even before it's documented.
+# For each decoder token: the C/C++ type(s) it decodes, and what the decode returns. Used by
+# `memscout decoders` so the command doubles as a C/C++-type -> token reference (e.g. when
+# reading a gdb `ptype /o` line). The token *list* comes from the live registry
+# (runtime.registered_tokens), so it can't drift; this only annotates what's there. Tokens
+# without an entry still print (flagged), so a newly registered decoder shows up here too.
 _DECODER_DOCS = {
-    "u8": "unsigned 8-bit int", "u16": "unsigned 16-bit int",
-    "u32": "unsigned 32-bit int", "u64": "unsigned 64-bit int",
-    "i8": "signed 8-bit int", "i16": "signed 16-bit int",
-    "i32": "signed 32-bit int", "i64": "signed 64-bit int",
-    "bool": "1-byte bool (returns int 0/1)",
-    "ptr": "8-byte raw pointer (returns the address it holds)",
-    "atomic": "mozilla::Atomic<T>; write as atomic:<T>, e.g. atomic:u32 (decodes as T)",
-    "nsstring": "ns[A]String (UTF-16) -> str",
-    "nsastring": "alias of nsstring",
-    "nsautostring": "alias of nsstring",
-    "nscstring": "ns[A]CString (UTF-8) -> str",
-    "nsacstring": "alias of nscstring",
-    "nsautocstring": "alias of nscstring",
-    "refptr": "RefPtr<T> -> raw pointee address",
-    "nscomptr": "nsCOMPtr<T> -> raw pointee address",
-    "nstarray": "nsTArray<T> -> {length, data} (data = address of element 0)",
-    "pldhash": "XPCOM PLDHashTable -> {count, capacity, entry_size, live[]}",
-    "mhashtable": "mozilla::HashMap/HashSet; write as mhashtable[:entry_size] "
-                  "-> {count, capacity, live[]}",
+    #             C/C++ type(s)                          -> return value
+    "u8":  ("uint8_t / unsigned char",                   "int"),
+    "u16": ("uint16_t / unsigned short",                 "int"),
+    "u32": ("uint32_t / unsigned int",                   "int"),
+    "u64": ("uint64_t / size_t / unsigned long",         "int"),
+    "i8":  ("int8_t / signed char",                      "int"),
+    "i16": ("int16_t / short",                           "int"),
+    "i32": ("int32_t / int",                             "int"),
+    "i64": ("int64_t / long / ptrdiff_t",                "int"),
+    "bool": ("bool (1 byte)",                            "int 0/1"),
+    "ptr": ("T* (any raw pointer)",                      "int (the address it holds)"),
+    "atomic": ("mozilla::Atomic<T>  [write atomic:<T>]", "as T (e.g. atomic:u32 -> int)"),
+    "nsstring": ("nsString / nsAString / nsStringBuffer-backed (UTF-16)", "str"),
+    "nsastring": ("nsAString (UTF-16)  [alias of nsstring]", "str"),
+    "nsautostring": ("nsAutoString (UTF-16)  [alias of nsstring]", "str"),
+    "nscstring": ("nsCString / nsACString (UTF-8)",      "str"),
+    "nsacstring": ("nsACString (UTF-8)  [alias of nscstring]", "str"),
+    "nsautocstring": ("nsAutoCString (UTF-8)  [alias of nscstring]", "str"),
+    "refptr": ("RefPtr<T> / already_AddRefed<T>",        "int (raw pointee address)"),
+    "nscomptr": ("nsCOMPtr<T>",                          "int (raw pointee address)"),
+    "nstarray": ("nsTArray<T> / AutoTArray<T,N> / FallibleTArray<T>",
+                 "{length, data}  (data = &element[0])"),
+    "pldhash": ("mozilla::PLDHashTable (XPCOM nsTHashtable/nsBaseHashtable), opt build",
+                "{count, capacity, entry_size, live[]}"),
+    "mhashtable": ("mozilla::HashMap<K,V> / HashSet<T> (mfbt)  [write mhashtable[:entry_size]]",
+                   "{count, capacity, live[]}"),
 }
 
 
 def _cmd_decoders(args):
-    """List every decoder type token a spec's TYPE field may use (the authoritative set)."""
+    """List every decoder token, the C/C++ type(s) it maps, and what it returns."""
     from .runtime import registered_tokens
-    print("Decoder type tokens for OFF:TYPE:NAME field specs "
-          "(scan / dump / Reporter.decode):\n")
+    print("Decoder TYPE tokens for OFF:TYPE:NAME field specs (scan / dump / Reporter.decode).")
+    print("Pick the token whose C/C++ type matches the member (e.g. from gdb `ptype /o`).\n")
+    print("  %-14s %-52s %s" % ("token", "C/C++ type(s)", "returns"))
+    print("  %-14s %-52s %s" % ("-----", "-------------", "-------"))
     for token in registered_tokens():
-        print("  %-14s %s" % (token, _DECODER_DOCS.get(token, "(custom / undocumented)")))
+        doc = _DECODER_DOCS.get(token)
+        if doc is None:
+            print("  %-14s %s" % (token, "(custom / undocumented)"))
+        else:
+            ctype, ret = doc
+            print("  %-14s %-52s %s" % (token, ctype, ret))
     print("\nSpec form: OFF:TYPE:NAME (OFF via int(x,0)). Register your own with "
           "memscout.runtime.register(token, fn).")
 

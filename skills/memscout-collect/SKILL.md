@@ -114,8 +114,9 @@ instances to exercise decoding, e.g. try a concrete DOM class in a tab process.)
 `atomic:<T>`, Firefox strings `nsstring`/`nscstring` (and `ns[A]String` variants),
 `nstarray`, `refptr`/`nscomptr`, and hashtables `pldhash` / `mhashtable[:entry_size]`.
 **For the authoritative, complete list run `memscout decoders`** — it prints straight from the
-live registry (with a one-line description each), so it never drifts and you needn't grep the
-source. `memscout offsets` picks these for you from DWARF. For **what each token returns** — scalars
+live registry, showing each token's **C/C++ type(s)** and what it returns, so it doubles as the
+type→token map you need when reading a member's C++ type (e.g. from gdb `ptype /o`). It never
+drifts and you needn't grep the source. `memscout offsets` picks these for you from DWARF. For **what each token returns** — scalars
 give ints, strings give a `str` (or a `"<…>"` sentinel), `refptr` gives the raw pointee
 address, `nstarray` gives `{length, data}`, hashtables give `{count, capacity, live:[…]}` —
 see [`REFERENCE.md`](REFERENCE.md); knowing the shape is essential when a field points at more
@@ -138,9 +139,10 @@ to read.
 > ```
 >
 > Read the byte offset from the left `/* offset */` column, map each member's C++ type to a
-> decoder token above (`bool`→`bool`, `int32_t`→`i32`, `nsString`→`nsstring`, `nsCString`→
+> decoder token (`bool`→`bool`, `int32_t`→`i32`, `nsString`→`nsstring`, `nsCString`→
 > `nscstring`, `RefPtr<T>`/`nsCOMPtr<T>`→`refptr`, `mozilla::Atomic<T>`→`atomic:<T>`,
-> `nsTArray<T>`→`nstarray`, …), and hand-write the `OFF:TYPE:NAME` specs. That's exactly what
+> `nsTArray<T>`→`nstarray`, …; **`memscout decoders` prints this full C/C++-type→token map**),
+> and hand-write the `OFF:TYPE:NAME` specs. That's exactly what
 > `memscout offsets` emits — you're just reading the layout with a tool that scales. (`ptype /o`
 > needs gdb ≥ 9. For a base-class member, follow the base's own `ptype /o` and add the base
 > offset gdb prints.) Then feed those specs to `author.py` **by hand** (no `--debuginfo`).
@@ -228,7 +230,7 @@ grep '"type": "object"' wakelock.jsonl | jq .
 
 | Command | Side | Purpose |
 |---------|------|---------|
-| `memscout decoders` | developer | list every decoder TYPE token (authoritative; from the live registry) |
+| `memscout decoders` | developer | list every decoder TYPE token + its C/C++ type(s) and return (authoritative; from the live registry) |
 | `memscout modules <pid>` | either | loaded modules + build-ids (find libxul + build-id) |
 | `memscout resolve <pid> <sym> [--module]` | developer | symbol → runtime addr **and** `module+offset` |
 | `memscout offsets <debuginfo> <type> [fields]` | developer | DWARF → `OFF:TYPE:NAME` specs |

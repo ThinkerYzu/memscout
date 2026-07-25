@@ -101,8 +101,10 @@ A field spec is `OFF:TYPE:NAME`:
 tokens don't give you a final value but a handle you read further from.
 
 The tables below are the **complete** built-in set. To confirm it live (it can't drift from the
-code), run **`memscout decoders`**, or from Python `memscout.runtime.registered_tokens()` — both
-read the actual registry. Anything not listed isn't built in; add it with `register(...)`.
+code), run **`memscout decoders`** — it prints each token's **C/C++ type(s)** and return value,
+so it also serves as the type→token map when you're reading a member's C++ type — or from Python
+`memscout.runtime.registered_tokens()`; both read the actual registry. Anything not listed isn't
+built in; add it with `register(...)`.
 
 ### Scalars
 
