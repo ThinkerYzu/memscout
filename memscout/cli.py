@@ -230,8 +230,9 @@ def main(argv=None):
 
     p_offsets = sub.add_parser(
         "offsets", help="(developer/authoring) emit OFF:TYPE:NAME specs for a type from DWARF",
-        epilog="Reads a debug-info ELF (needs pyelftools). Offline authoring aid; the reporter "
-               "side never runs this. Fields default to all members in offset order.")
+        epilog="Reads a debug-info ELF's DWARF through gdb (needs gdb on PATH; scales to "
+               "libxul). Offline authoring aid; the reporter side never runs this. Fields "
+               "default to all members in offset order.")
     p_offsets.add_argument("debuginfo", help="ELF file with DWARF (unstripped build or .debug)")
     p_offsets.add_argument("type", help="C++ type name, qualified (e.g. mozilla::dom::WakeLock)")
     p_offsets.add_argument("fields", nargs="*", help="member names to emit (default: all)")

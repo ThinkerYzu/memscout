@@ -2,8 +2,8 @@
 
 Level 1 only needs a module's build-id (to key the remote symbol sources) and,
 later, its symbol addresses and base vaddr. We shell out to binutils rather than
-take a parsing dependency (DESIGN Decision 1); this module is the single place
-that does so, so swapping in pyelftools at Level 2 stays a local change.
+take a parsing dependency (DESIGN Decision 1). Level 2 DWARF authoring similarly
+shells out -- to gdb (see dwarf.py) -- rather than embed a DWARF parser.
 """
 
 import shutil

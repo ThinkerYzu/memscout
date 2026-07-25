@@ -48,10 +48,11 @@ it, or make it an auto-discovered Claude Code skill by symlinking it in:
 ## Install
 
     pip install -e .                 # runtime + CLI (standard library only)
-    pip install -e .[authoring]      # + pyelftools, for the developer-side `offsets` (Level 2)
 
-The runtime/reporter core has no third-party dependencies; only the DWARF authoring aid needs
-`pyelftools`. Requires Linux, ELF, x86-64, and `readelf` (binutils) for symbol resolution.
+No third-party Python dependencies. Requires Linux, ELF, x86-64, and `readelf` (binutils) for
+symbol resolution. The developer-side `offsets` command (Level 2 DWARF authoring) reads DWARF
+through **gdb**, so gdb must be on PATH for that one command — this is what lets it scale to
+Firefox-sized `libxul` debug info. The reporter/runtime core needs none of this.
 
 ## Tests
 

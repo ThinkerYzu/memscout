@@ -9,12 +9,8 @@ description = "Lightweight, read-only runtime data-collection framework for live
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.8"
-dependencies = []          # runtime is stdlib-only; shells out to readelf/debuginfod-find
-
-[project.optional-dependencies]
-# Developer-side authoring only (Level 2 DWARF -> spec strings). The reporter/runtime
-# core needs none of this.
-authoring = ["pyelftools>=0.29"]
+dependencies = []          # stdlib-only; shells out to readelf/debuginfod-find, and to gdb
+                           # for Level 2 DWARF authoring (developer-side only)
 
 [project.scripts]
 memscout = "memscout.cli:main"
