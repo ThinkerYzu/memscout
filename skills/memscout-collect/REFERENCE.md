@@ -152,6 +152,12 @@ lives back in the hashes block). Decode the entry's own fields from `addr`.
 `live` is capped at `count` entries. Each `addr` is `store + capacity*4 + i*entry_size`
 (entries block base + i × entry stride).
 
+### Linked lists → node addresses
+
+| Token | Returns | Notes |
+|-------|---------|-------|
+| `linkedlist` | `{"count": int, "nodes": [addr, …]}` | `mozilla::LinkedList<T>`. Walks `mNext` from the sentinel (the list object at offset 0) until it loops back. Each `addr` is a `LinkedListElement` — for the usual `class T : public LinkedListElement<T>` that *is* the `T` object (element is the first base at offset 0); otherwise subtract the element's offset within `T`. Decode each node's fields from its `addr` |
+
 ### Custom decoders
 
 Register a token before you use it in a spec:

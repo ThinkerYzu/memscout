@@ -113,7 +113,7 @@ instances to exercise decoding, e.g. try a concrete DOM class in a tab process.)
 **Decoder type tokens** for the specs: `u8 u16 u32 u64 i8 i16 i32 i64 bool ptr`,
 `atomic:<T>`, Firefox strings `nsstring`/`nscstring` (and `ns[A]String` variants),
 `nsatom` (atom text), `nstarray`, `refptr`/`nscomptr`/`uniqueptr`/`owningnonnull`,
-`maybe:<mIsSome_off>`, and hashtables `pldhash` / `mhashtable[:entry_size]`.
+`maybe:<mIsSome_off>`, `linkedlist`, and hashtables `pldhash` / `mhashtable[:entry_size]`.
 **For the authoritative, complete list run `memscout decoders`** — it prints straight from the
 live registry, showing each token's **C/C++ type(s)** and what it returns, so it doubles as the
 type→token map when you read a member's C++ type. It never drifts and you needn't grep the

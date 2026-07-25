@@ -507,6 +507,37 @@ register("pldhash", _decode_pldhash)
 register("mhashtable", _decode_mhashtable)
 
 
+# mozilla::LinkedList<T> is a circular list threaded through a LinkedListElement
+# embedded in each node (mNext @ +0, mPrev @ +8, bool mIsSentinel @ +16). The
+# list object is its sentinel element at offset 0; iteration runs mSentinel.mNext
+# forward until it loops back to the sentinel (LinkedList.h begin()/end()).
+_LINKEDLIST_MAX = 100000                # runaway guard for corrupted / cyclic memory
+
+
+def _decode_linkedlist(mem, base, off, arg):
+    """mozilla::LinkedList<T> at base+off -> {count, nodes: [addr, ...]}.
+
+    `nodes` holds the LinkedListElement addresses in forward order. When the node
+    embeds LinkedListElement as its first base (the usual
+    `class T : public LinkedListElement<T>`), each addr *is* the T object;
+    otherwise subtract the element's offset within T. Decode each node's own
+    fields with more specs relative to its addr. An empty list yields count 0.
+    The walk stops at `arg` nodes if given (`linkedlist:<max>`), else at
+    _LINKEDLIST_MAX -- a guard against corrupted or cyclic links.
+    """
+    limit = int(arg, 0) if arg else _LINKEDLIST_MAX
+    sentinel = base + off
+    nodes = []
+    cur = mem.read_ptr(sentinel)                # mSentinel.mNext
+    while cur and cur != sentinel and len(nodes) < limit:
+        nodes.append(cur)
+        cur = mem.read_ptr(cur)                 # element.mNext
+    return {"count": len(nodes), "nodes": nodes}
+
+
+register("linkedlist", _decode_linkedlist)
+
+
 # ============================================================================
 # Reporter: the read-only facade a collection script drives
 # ============================================================================

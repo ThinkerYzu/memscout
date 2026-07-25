@@ -77,6 +77,8 @@ def _firefox_token(name):
         return "uniqueptr"
     if name.startswith("OwningNonNull"):
         return "owningnonnull"
+    if "LinkedList" in name and "LinkedListElement" not in name:
+        return "linkedlist"                     # LinkedList<T>, AutoCleanLinkedList<T>
     if name.startswith(("nsTHashtable", "nsBaseHashtable", "nsClassHashtable",
                         "nsInterfaceHashtable", "nsRefPtrHashtable", "nsTHashMap",
                         "nsTHashSet", "PLDHashTable")):

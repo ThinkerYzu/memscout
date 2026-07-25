@@ -185,6 +185,43 @@ class Tier1DecoderTest(unittest.TestCase):
         self.assertIn("needs flag offset", decoders.decode_field(mem, 0x4000, "0:maybe:m")[1])
 
 
+class LinkedListDecoderTest(unittest.TestCase):
+    def test_walks_forward_to_sentinel(self):
+        # sentinel.mNext -> n1 -> n2 -> n3 -> back to sentinel (each mNext @ +0).
+        mem = FakeMemory()
+        sentinel, n1, n2, n3 = 0x4000, 0x5000, 0x5100, 0x5200
+        mem.place(sentinel, struct.pack("<Q", n1))
+        mem.place(n1, struct.pack("<Q", n2))
+        mem.place(n2, struct.pack("<Q", n3))
+        mem.place(n3, struct.pack("<Q", sentinel))
+        got = decoders.decode_field(mem, sentinel, "0:linkedlist:l")[1]
+        self.assertEqual(got, {"count": 3, "nodes": [n1, n2, n3]})
+
+    def test_empty_list_is_self_referential(self):
+        mem = FakeMemory()
+        sentinel = 0x4000
+        mem.place(sentinel, struct.pack("<Q", sentinel))    # mNext points at itself
+        self.assertEqual(decoders.decode_field(mem, sentinel, "0:linkedlist:l")[1],
+                         {"count": 0, "nodes": []})
+
+    def test_member_at_nonzero_offset(self):
+        mem = FakeMemory()
+        obj, n1 = 0x4000, 0x5000
+        mem.place(obj, b"\0" * 8 + struct.pack("<Q", n1))   # LinkedList member at +8
+        mem.place(n1, struct.pack("<Q", obj + 8))           # back to the sentinel at obj+8
+        got = decoders.decode_field(mem, obj, "8:linkedlist:l")[1]
+        self.assertEqual(got, {"count": 1, "nodes": [n1]})
+
+    def test_max_arg_bounds_a_cyclic_list(self):
+        # A corrupt self-cycle (n1.mNext -> n1) would spin; linkedlist:2 caps it.
+        mem = FakeMemory()
+        sentinel, n1 = 0x4000, 0x5000
+        mem.place(sentinel, struct.pack("<Q", n1))
+        mem.place(n1, struct.pack("<Q", n1))                # points at itself, never the sentinel
+        got = decoders.decode_field(mem, sentinel, "0:linkedlist:2:l")[1]
+        self.assertEqual(got, {"count": 2, "nodes": [n1, n1]})
+
+
 class HashtableTest(unittest.TestCase):
     def test_pldhash_counts_and_enumerates_live(self):
         # PLDHashTable's EntryStore lays out hashes[capacity] (4 bytes each) first,

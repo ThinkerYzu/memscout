@@ -110,6 +110,8 @@ _DECODER_DOCS = {
                 "{count, capacity, entry_size, live[]}"),
     "mhashtable": ("mozilla::HashMap<K,V> / HashSet<T> (mfbt)  [write mhashtable[:entry_size]]",
                    "{count, capacity, live[]}"),
+    "linkedlist": ("mozilla::LinkedList<T> / AutoCleanLinkedList<T>  [write linkedlist[:max]]",
+                   "{count, nodes[]}  (nodes = LinkedListElement addrs)"),
 }
 
 
