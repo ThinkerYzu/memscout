@@ -70,6 +70,28 @@ class PrimitiveTest(unittest.TestCase):
     def test_i32_sign_extends(self):
         self.assertEqual(self.decode("0:i32:x"), -1)
 
+    def test_every_int_width(self):
+        # All-ones bytes at base -> each unsigned token reads its full-width max,
+        # each signed token sign-extends to -1 (covers u8/u16/i8/i16/i64, not just u32/i32).
+        mem = FakeMemory()
+        mem.place(0x8000, b"\xff" * 8)
+        cases = {
+            "u8": 0xFF, "u16": 0xFFFF, "u32": 0xFFFFFFFF, "u64": 0xFFFFFFFFFFFFFFFF,
+            "i8": -1, "i16": -1, "i32": -1, "i64": -1,
+        }
+        for tok, expected in cases.items():
+            self.assertEqual(decoders.decode_field(mem, 0x8000, "0:%s:x" % tok)[1],
+                             expected, tok)
+
+    def test_signed_widths_read_a_real_negative(self):
+        # A value that is negative only at the right width: 0x80 -> -128 as i8,
+        # +128 as u8; 0x8000 -> -32768 as i16.
+        mem = FakeMemory()
+        mem.place(0x8000, pack(("<B", 0x80), ("<B", 0x00), ("<H", 0x8000)))
+        self.assertEqual(decoders.decode_field(mem, 0x8000, "0:i8:x")[1], -128)
+        self.assertEqual(decoders.decode_field(mem, 0x8000, "0:u8:x")[1], 128)
+        self.assertEqual(decoders.decode_field(mem, 0x8000, "2:i16:x")[1], -32768)
+
     def test_bool(self):
         self.assertEqual(self.decode("4:bool:x"), 1)
 
