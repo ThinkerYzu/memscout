@@ -74,8 +74,33 @@ memscout bundle   <script.py> [-o out.py] [--minify]        # inline runtime -> 
 `memscout decoders` reads the live decoder registry, so it is always the authoritative list of
 field types — no need to go looking in the source.
 
-As a library: `import memscout; with memscout.Target(pid) as t: ...` — everything the CLI does is
-available programmatically (`resolve`, `relocate`, `find_objects`, `decode`, `identify_class`, …).
+As a library there are two entry points, and which one you import matters:
+
+| Import | Use for | Needs symbols? | Survives `bundle`? |
+|--------|---------|----------------|--------------------|
+| `from memscout import Target` | analysis on your own machine | yes | **no** |
+| `from memscout.runtime import Reporter` | collection scripts you ship to a reporter | no | yes |
+
+`Target` adds symbol resolution and class identification on top of everything `Reporter` can do:
+
+```python
+from memscout import Target
+
+with Target(1234) as t:
+    needle = t.vtable("_ZTV7Session", module="demo_target")
+    for base in t.find_objects(needle):
+        print(t.identify_class(base), t.decode(base, "12:i32:mId 24:nscstring:mUser"))
+```
+
+Note that `find_objects` takes that needle *value*, not a symbol name. `vtable()` resolves the
+symbol and steps past the two vtable header words, which is what a live object actually stores in
+its first slot.
+
+**A script you intend to `bundle` must import `Reporter` from `memscout.runtime`.** `bundle` only
+strips the three `memscout.runtime` import forms; a `from memscout import Target` line survives into
+the bundled file and fails with `ModuleNotFoundError: No module named 'memscout'` on a reporter's
+machine. Custom field types have the same split: register them with `register` from
+`memscout.runtime` (the top level exports the same function as `register_decoder`).
 
 ## Remote reporter → developer workflow
 
@@ -114,10 +139,11 @@ adds the two together. `build_id` lets the reporter confirm the build matches be
 offsets.
 
 **2. Reporter runs one self-contained file.** `bundle` inlines the runtime so the script needs only
-a stock Python 3 — no memscout install, no packages. The script imports `memscout.runtime`, whose
-`Reporter` class is the entire reporter-side API: `relocate`, `scan`, `read`, `decode`, and nothing
-that touches symbols or DWARF. It **relocates** (`load_bias + offset`), **scans** the heap for live
-objects, **decodes** the fields, and writes a JSON-lines log:
+a stock Python 3 — no memscout install, no packages. The script does `from memscout.runtime import
+Reporter`, and that class is the entire reporter-side API — `relocate`, `scan_regions`,
+`find_objects`, `read`, `decode` — with nothing that touches symbols or DWARF. It **relocates**
+(`load_bias + offset`), **scans** the heap for live objects, **decodes** the fields, and writes a
+JSON-lines log:
 
 ```console
 $ memscout bundle collect.py -o collect_bundled.py     # developer builds the one file
