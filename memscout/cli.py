@@ -73,8 +73,9 @@ def _cmd_bundle(args):
 
 
 # For each decoder token: the C/C++ type(s) it decodes, and what the decode returns. Used by
-# `memscout decoders` so the command doubles as a C/C++-type -> token reference (e.g. when
-# reading a gdb `ptype /o` line). The token *list* comes from the live registry
+# `memscout decoders` so the command doubles as a C/C++-type -> token reference (`memscout
+# offsets` picks the token for you; this is for reading a member's type by hand). The token
+# *list* comes from the live registry
 # (runtime.registered_tokens), so it can't drift; this only annotates what's there. Tokens
 # without an entry still print (flagged), so a newly registered decoder shows up here too.
 _DECODER_DOCS = {
@@ -98,6 +99,11 @@ _DECODER_DOCS = {
     "nsautocstring": ("nsAutoCString (UTF-8)  [alias of nscstring]", "str"),
     "refptr": ("RefPtr<T> / already_AddRefed<T>",        "int (raw pointee address)"),
     "nscomptr": ("nsCOMPtr<T>",                          "int (raw pointee address)"),
+    "uniqueptr": ("mozilla::UniquePtr<T> (default deleter)", "int (owned pointer)"),
+    "owningnonnull": ("mozilla::OwningNonNull<T>",       "int (raw pointee address)"),
+    "nsatom": ("RefPtr<nsAtom> / nsStaticAtom* / nsAtom*", "str (the atom's text)"),
+    "maybe": ("mozilla::Maybe<T>  [write maybe:<mIsSome offset>]",
+              "{engaged, value}  (value = &T storage)"),
     "nstarray": ("nsTArray<T> / AutoTArray<T,N> / FallibleTArray<T>",
                  "{length, data}  (data = &element[0])"),
     "pldhash": ("mozilla::PLDHashTable (XPCOM nsTHashtable/nsBaseHashtable), opt build",
@@ -111,7 +117,8 @@ def _cmd_decoders(args):
     """List every decoder token, the C/C++ type(s) it maps, and what it returns."""
     from .runtime import registered_tokens
     print("Decoder TYPE tokens for OFF:TYPE:NAME field specs (scan / dump / Reporter.decode).")
-    print("Pick the token whose C/C++ type matches the member (e.g. from gdb `ptype /o`).\n")
+    print("Pick the token whose C/C++ type matches the member; "
+          "`memscout offsets` picks it for you from the debug info.\n")
     print("  %-14s %-52s %s" % ("token", "C/C++ type(s)", "returns"))
     print("  %-14s %-52s %s" % ("-----", "-------------", "-------"))
     for token in registered_tokens():

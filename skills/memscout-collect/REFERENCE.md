@@ -131,20 +131,26 @@ Treat a value starting with `<` as "not a real string."
 | Token | Returns | What to do with it |
 |-------|---------|--------------------|
 | `refptr`, `nscomptr` | `int` or `None` — the raw held pointer (the **pointee's** address) | to see the pointee's fields, `r.decode(that_addr, "…")` or `r.read*` from it |
+| `uniqueptr`, `owningnonnull` | `int` or `None` — the owned/held raw pointer | same as `refptr`; `uniqueptr` assumes the default (stateless) deleter, so the pointer is at offset 0 |
+| `nsatom` | `str` or `None` — the atom's text | follows a `RefPtr<nsAtom>` / `nsStaticAtom*` member and reads the UTF-16 chars (handles static vs. dynamic atoms). Great for DOM tag/attribute/event names |
+| `maybe:<mIsSome_off>` | `dict {"engaged": bool, "value": int}` | `mozilla::Maybe<T>`. `value` is the address of the T storage (offset 0) when engaged, else 0 — decode it with another spec. You must pass the `mIsSome` byte offset (it sits after the T storage, so it depends on `sizeof(T)`) |
 | `nstarray` | `dict {"length": int, "data": int}` | `data` is the address of element 0; elements are contiguous. Read element `i` at `data + i * sizeof(T)` — **you** must know `sizeof(T)`; the decoder doesn't |
 
 ### Hashtables → counts + live-entry addresses
 
 Both return a dict describing the table and a `live` list of **entry addresses**; you decode
-each entry yourself (its first `uint32` is the key-hash; the rest of the entry's layout is the
-table's, which you supply as more specs relative to each slot address).
+each entry yourself with more specs relative to each slot address. The storage is a split block —
+all cached hashes first (`capacity` × 4 bytes), then all entries (`capacity` × `entry_size`) —
+so a returned `addr` points at the **entry**, which does *not* contain the key-hash (the hash
+lives back in the hashes block). Decode the entry's own fields from `addr`.
 
 | Token | Returns | Notes |
 |-------|---------|-------|
 | `pldhash` | `{"count", "capacity", "entry_size", "live": [addr, …]}` | XPCOM `PLDHashTable`. Layout is the **opt build**'s; DEBUG builds shift offsets |
 | `mhashtable[:entry_size]` | `{"count", "capacity", "live": [addr, …]}` | mfbt `mozilla::HashMap`/`HashSet`. `live` is only populated if you pass the entry size, e.g. `mhashtable:24`, since the stride isn't stored inline |
 
-`live` is capped at `count` entries. Each `addr` is `store + i * entry_size`.
+`live` is capped at `count` entries. Each `addr` is `store + capacity*4 + i*entry_size`
+(entries block base + i × entry stride).
 
 ### Custom decoders
 

@@ -133,6 +133,58 @@ class ContainerTest(unittest.TestCase):
                          {"length": 0, "data": 0})
 
 
+class Tier1DecoderTest(unittest.TestCase):
+    def test_uniqueptr_and_owningnonnull_read_the_pointer(self):
+        mem = FakeMemory()
+        mem.place(0x4000, struct.pack("<Q", 0xCAFE0000))
+        self.assertEqual(decoders.decode_field(mem, 0x4000, "0:uniqueptr:p")[1], 0xCAFE0000)
+        self.assertEqual(decoders.decode_field(mem, 0x4000, "0:owningnonnull:p")[1], 0xCAFE0000)
+
+    def test_nsatom_static(self):
+        # nsStaticAtom: word0 = mLength | (mIsStatic<<30); chars at (atom - mStringOffset).
+        mem = FakeMemory()
+        atom, string_offset = 0x5000, 0x40
+        mem.place(atom - string_offset, "div".encode("utf-16-le"))
+        word0 = 3 | (1 << 30)
+        mem.place(atom, pack(("<I", word0), ("<I", 0), ("<I", string_offset)))
+        mem.place(0x4000, struct.pack("<Q", atom))          # RefPtr<nsAtom> member
+        self.assertEqual(decoders.decode_field(mem, 0x4000, "0:nsatom:tag")[1], "div")
+
+    def test_nsatom_dynamic(self):
+        # nsDynamicAtom: is_static=0; StringBuffer* at +16; chars at buffer + 8.
+        mem = FakeMemory()
+        atom, buf = 0x6000, 0x7000
+        mem.place(buf, b"\0" * 8 + "span".encode("utf-16-le"))  # 8-byte StringBuffer header
+        mem.place(atom, pack(("<I", 4), ("<I", 0), ("<Q", 0), ("<Q", buf)))
+        mem.place(0x4000, struct.pack("<Q", atom))
+        self.assertEqual(decoders.decode_field(mem, 0x4000, "0:nsatom:tag")[1], "span")
+
+    def test_nsatom_null_is_none(self):
+        mem = FakeMemory()
+        mem.place(0x4000, struct.pack("<Q", 0))
+        self.assertIsNone(decoders.decode_field(mem, 0x4000, "0:nsatom:tag")[1])
+
+    def test_maybe_engaged_points_at_storage(self):
+        # Maybe<uint32_t>: value @ +0, char mIsSome @ +4 -> spec maybe:4.
+        mem = FakeMemory()
+        obj = 0x4000
+        mem.place(obj, pack(("<I", 12345), ("<B", 1)))
+        got = decoders.decode_field(mem, obj, "0:maybe:4:m")[1]
+        self.assertEqual(got, {"engaged": True, "value": obj})
+
+    def test_maybe_empty(self):
+        mem = FakeMemory()
+        obj = 0x4000
+        mem.place(obj, pack(("<I", 0), ("<B", 0)))
+        self.assertEqual(decoders.decode_field(mem, obj, "0:maybe:4:m")[1],
+                         {"engaged": False, "value": 0})
+
+    def test_maybe_without_flag_offset_is_flagged(self):
+        mem = FakeMemory()
+        mem.place(0x4000, pack(("<I", 1), ("<B", 1)))
+        self.assertIn("needs flag offset", decoders.decode_field(mem, 0x4000, "0:maybe:m")[1])
+
+
 class HashtableTest(unittest.TestCase):
     def test_pldhash_counts_and_enumerates_live(self):
         # PLDHashTable's EntryStore lays out hashes[capacity] (4 bytes each) first,

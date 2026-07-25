@@ -69,8 +69,14 @@ def _firefox_token(name):
         return "nstarray"
     if name.startswith("nsCOMPtr"):
         return "nscomptr"
+    if "nsAtom" in name and name.startswith(("RefPtr", "StaticRefPtr", "nsStaticAtom")):
+        return "nsatom"                         # RefPtr<nsAtom>, nsStaticAtom
     if name.startswith(("RefPtr", "StaticRefPtr")):
         return "refptr"
+    if name.startswith("UniquePtr"):
+        return "uniqueptr"
+    if name.startswith("OwningNonNull"):
+        return "owningnonnull"
     if name.startswith(("nsTHashtable", "nsBaseHashtable", "nsClassHashtable",
                         "nsInterfaceHashtable", "nsRefPtrHashtable", "nsTHashMap",
                         "nsTHashSet", "PLDHashTable")):

@@ -358,6 +358,74 @@ def _decode_ptr_member(mem, base, off, arg):
 
 register("refptr", _decode_ptr_member)
 register("nscomptr", _decode_ptr_member)
+# UniquePtr<T> and OwningNonNull<T> also hold a single raw pointer at offset 0
+# (default/stateless deleter for UniquePtr; the RefPtr member for OwningNonNull).
+register("uniqueptr", _decode_ptr_member)
+register("owningnonnull", _decode_ptr_member)
+
+
+# Header of mozilla::StringBuffer: `atomic<uint32_t> mRefCount` + `uint32_t
+# mStorageSize`; the chars follow immediately (StringBuffer::Data() == this + 1).
+_STRINGBUFFER_HDR = 8
+
+
+def _decode_nsatom(mem, base, off, arg):
+    """RefPtr<nsAtom> / nsStaticAtom* member at base+off -> the atom's string (str).
+
+    Reads the atom pointer, then follows nsAtom's layout (xpcom/ds/nsAtom.h):
+      word0 @ +0 : mLength in bits 0-29, mIsStatic in bit 30
+      mHash  @ +4
+    A static atom (nsStaticAtom) stores its UTF-16 chars at `atom - mStringOffset`
+    (mStringOffset @ +8, at a lower address). A dynamic atom (nsDynamicAtom) keeps
+    them in a StringBuffer whose pointer is at +16 (after the base + an 8-byte
+    ThreadSafeAutoRefCnt); the chars are at StringBuffer::Data() == buffer + 8.
+    """
+    atom = mem.read_ptr(base + off)
+    if not atom:
+        return None
+    word0 = mem.read_uint(atom, 4)
+    if word0 is None:
+        return "<unreadable>"
+    length = word0 & 0x3FFFFFFF
+    is_static = (word0 >> 30) & 1
+    if length > _MAX_STRLEN:
+        return "<len=%d?>" % length
+    if is_static:
+        string_offset = mem.read_uint(atom + 8, 4)
+        if string_offset is None:
+            return "<unreadable>"
+        chars = atom - string_offset
+    else:
+        buf = mem.read_ptr(atom + 16)
+        if not buf:
+            return "<unreadable>"
+        chars = buf + _STRINGBUFFER_HDR
+    raw = mem.read(chars, length * 2)
+    return raw.decode("utf-16-le", "replace") if raw else "<unreadable>"
+
+
+register("nsatom", _decode_nsatom)
+
+
+def _decode_maybe(mem, base, off, arg):
+    """mozilla::Maybe<T> at base+off -> {engaged, value}.
+
+    The T storage is at offset 0 of the Maybe; the `char mIsSome` flag follows it,
+    so its offset depends on sizeof(T) and must be passed as the arg
+    (`maybe:<flag_off>`, e.g. `maybe:8`). `value` is the address of the T storage
+    when engaged (decode it with a separate spec), else 0.
+    """
+    if not arg:
+        return "<maybe: needs flag offset, e.g. maybe:8>"
+    t = base + off
+    flag = mem.read_uint(t + int(arg, 0), 1)
+    if flag is None:
+        return None
+    engaged = flag != 0
+    return {"engaged": engaged, "value": t if engaged else 0}
+
+
+register("maybe", _decode_maybe)
 
 
 def _decode_nstarray(mem, base, off, arg):
