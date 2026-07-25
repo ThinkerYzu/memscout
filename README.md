@@ -6,7 +6,7 @@ memscout reads data out of a **running** Linux program — without stopping it a
 a debugger. Give it a process ID and it can answer questions like *"how many objects of type `X`
 exist right now?"* or *"what are their field values?"* by reading the process's memory directly
 through `/proc/<pid>/mem`. It only ever **reads**, and never pauses the target, so it is safe to
-point at a live or production process.
+point at even a production process.
 
 Good for: inspecting live state in a running Firefox during a bug hunt, sampling a long-running
 service, or collecting a one-off snapshot from a machine where you can't run a debugger.
@@ -28,50 +28,72 @@ Two ideas do the work here:
 
 - **Finding the objects** — the `_ZTV7Session` argument is a *vtable symbol*. Every C++ class with
   virtual methods gets one unique symbol from the compiler (`_ZTV7Session` is the mangled name for
-  "vtable for `Session`"), and every live object of that class begins with a pointer to it — so
-  scanning memory for that pointer finds them all.
+  "vtable for `Session`"), and every live object of that class begins with a pointer to it — the
+  `vptr` in the output above — so scanning memory for that pointer finds them all.
 - **Reading the fields** — each `offset:type:name` argument is a *field spec*: `12:i32:mId` means
   *"at byte 12 there's a 32-bit int; call it `mId`."* Run `memscout decoders` for every type you can
   name (ints, bools, pointers, Firefox strings, arrays, hashtables, …).
 
 That example is the simplest case: one machine that has both the running process **and** its debug
-symbols. When you don't (see the workflow below), memscout splits the job so the machine running the
-process needs no symbols at all.
+symbols. When the symbols live somewhere else, memscout splits the job so the machine running the
+process needs no symbols at all (see the workflow below).
+
+## Install
+
+    pip install -e .                 # runtime + CLI (standard library only)
+
+No third-party Python dependencies. memscout runs on Linux, on x86-64, against ELF binaries.
+Symbol resolution shells out to `readelf`, so binutils must be installed. The developer-side
+`offsets` command reads DWARF through **gdb** — that is what lets it handle debug info as large as
+Firefox's `libxul` — so gdb is needed for that one command. The reporter side (below) needs none of
+this; stock Python 3 is enough.
+
+**Permissions.** Opening `/proc/<pid>/mem` takes the same permission as attaching a debugger:
+processes you started yourself are fine, anything else is not. On distributions that default to
+Yama's restricted ptrace (Ubuntu and Debian do), "anything else" includes other processes of your
+own user. Either run memscout as root, or lift the restriction once:
+
+    echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope
+
+Without one of those, memscout exits with `cannot read /proc/<pid>/mem and PTRACE_SEIZE failed`.
 
 ## CLI
 
-The full set of subcommands (each is also available as a Python library call):
+The full set of subcommands:
 
-    memscout modules  <pid>                                    # loaded ELF modules + build-ids
-    memscout resolve  <pid> <symbol> [--module NAME]           # symbol -> addr + module+offset
-    memscout scan     <pid> <vtable-symbol> [OFF:TYPE:NAME ...] # find + decode live objects
-    memscout dump     <pid> <addr> [OFF:TYPE:NAME ...]         # an object's class + fields/slots
-    memscout decoders                                          # list the field TYPE tokens (authoritative)
-    memscout offsets  <debuginfo-elf> <type> [field ...]       # (developer) DWARF -> spec strings
-    memscout bundle   <script.py> [-o out.py] [--minify]       # inline runtime -> one self-contained file
+```
+memscout modules  <pid>                                     # loaded ELF modules + build-ids
+memscout resolve  <pid> <symbol> [--module NAME]            # symbol -> addr + module+offset
+memscout scan     <pid> <vtable-symbol> [OFF:TYPE:NAME ...] # find + decode live objects
+memscout dump     <pid> <addr> [OFF:TYPE:NAME ...]          # an object's class + fields/slots
+memscout decoders                                           # list the field TYPE tokens
+memscout offsets  <debuginfo-elf> <type> [field ...]        # (developer) DWARF -> spec strings
+memscout bundle   <script.py> [-o out.py] [--minify]        # inline runtime -> one self-contained file
+```
+
+`memscout decoders` reads the live decoder registry, so it is always the authoritative list of
+field types — no need to go looking in the source.
 
 As a library: `import memscout; with memscout.Target(pid) as t: ...` — everything the CLI does is
 available programmatically (`resolve`, `relocate`, `find_objects`, `decode`, `identify_class`, …).
-A reporter-only script imports the self-contained `memscout.runtime` (the `Reporter` facade:
-`relocate`/`scan`/`read`/`decode`, no symbols/DWARF); `memscout bundle` ships it as one file.
 
 ## Remote reporter → developer workflow
 
 memscout's primary use case is collecting runtime info from a machine you can't attach a debugger
-to. The work splits across two roles by what each side is allowed to have — the reporter's machine
-never needs symbols, DWARF, or a symbol server:
+to. The work splits across two roles by what each side needs to have on hand — the reporter's
+machine never needs symbols, DWARF, or a symbol server:
 
-| Side | Runs | Has symbols/DWARF? | Job |
-|------|------|--------------------|-----|
+| Side | Where | Has symbols/DWARF? | Job |
+|------|-------|--------------------|-----|
 | **Developer** (+ AI agent) | offline, on a copy of the target's build | **yes** | resolve addresses + field layouts, author a script, analyze the log |
 | **Reporter** | on the affected machine | **no** | run the script, share the log |
 
-**1. Developer resolves the addresses** offline, keyed to the reporter's exact build. `resolve`
-gives the `(module, offset)` the reporter will relocate; `offsets` turns a type's DWARF into the
-`OFF:TYPE:NAME` field specs (or write them by hand):
+**1. Developer resolves the addresses** offline, against the reporter's exact build. `resolve`
+gives the `(module, offset)` pair the reporter will turn back into an address; `offsets` turns a
+type's DWARF into the `OFF:TYPE:NAME` field specs (or write them by hand):
 
 ```console
-$ memscout resolve <pid> _ZTV7Session --module demo_target
+$ memscout resolve 1234 _ZTV7Session --module demo_target
 _ZTV7Session = 0x… = demo_target+0x3d50   (vtable, size=…, via local-symtab)
 $ memscout offsets demo_target-with-debug Session mActive mId mUser
 8:bool:mActive
@@ -86,12 +108,16 @@ Those go into a small **config** the reporter's script reads — the only thing 
   "build_id": "f3e8279a…", "field_specs": ["8:bool:mActive", "12:i32:mId", "24:nscstring:mUser"] }
 ```
 
-`vtable_offset` is relative to the module's load base; `build_id` lets the reporter confirm the
-build matches before trusting the offsets.
+`vtable_offset` is the `0x3d50` from above, written in decimal. It counts from the address the
+module happened to be loaded at — its *load bias* — which differs on every run, so the reporter
+adds the two together. `build_id` lets the reporter confirm the build matches before trusting the
+offsets.
 
 **2. Reporter runs one self-contained file.** `bundle` inlines the runtime so the script needs only
-a stock Python 3 — no memscout install, no packages. It **relocates** (`load_bias + offset`),
-**scans** the heap for live objects, **decodes** the fields, and writes a JSON-lines log:
+a stock Python 3 — no memscout install, no packages. The script imports `memscout.runtime`, whose
+`Reporter` class is the entire reporter-side API: `relocate`, `scan`, `read`, `decode`, and nothing
+that touches symbols or DWARF. It **relocates** (`load_bias + offset`), **scans** the heap for live
+objects, **decodes** the fields, and writes a JSON-lines log:
 
 ```console
 $ memscout bundle collect.py -o collect_bundled.py     # developer builds the one file
@@ -110,22 +136,17 @@ authoring flow — study the target class, pick objects/fields, verify with the 
 it, or make it an auto-discovered Claude Code skill by symlinking it in:
 `mkdir -p .claude/skills && ln -s ../../skills/memscout-collect .claude/skills/`.
 
-## Install
-
-    pip install -e .                 # runtime + CLI (standard library only)
-
-No third-party Python dependencies. Requires Linux, ELF, x86-64, and `readelf` (binutils) for
-symbol resolution. The developer-side `offsets` command (Level 2 DWARF authoring) reads DWARF
-through **gdb**, so gdb must be on PATH for that one command — this is what lets it scale to
-Firefox-sized `libxul` debug info. The reporter/runtime core needs none of this.
-
 ## Tests
 
     ./run-tests.sh        # or: make test
 
 ## Docs
 
-Full spec, design, and handoff live in the task repo under `proj_docs/memscout/`.
+- [`examples/`](examples/) — the runnable reporter → developer walkthrough, end to end
+- [`skills/memscout-collect/SKILL.md`](skills/memscout-collect/SKILL.md) — the script-authoring
+  flow, written for an AI agent
+- [`skills/memscout-collect/REFERENCE.md`](skills/memscout-collect/REFERENCE.md) — the reporter API
+  and each decoder's exact return shape
 
 ## Releasing
 
