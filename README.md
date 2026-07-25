@@ -26,17 +26,51 @@ A reporter-only script imports the self-contained `memscout.runtime` (the `Repor
 
 ## Remote reporter → developer workflow
 
-memscout's primary use case is collecting runtime info from a machine you can't touch:
+memscout's primary use case is collecting runtime info from a machine you can't attach a debugger
+to. The work splits across two roles by what each side is allowed to have — the reporter's machine
+never needs symbols, DWARF, or a symbol server:
 
-- A **reporter** runs a small script that **relocates** developer-supplied `(module, offset)`
-  addresses, **scans** the heap, **decodes** fields, and writes a log — needing no symbols, DWARF,
-  or symbol server.
-- A **developer** (with an AI agent) authors that script for the reporter's exact build, resolving
-  symbols and field offsets offline, and analyzes the log. The two authoring commands line up with
-  what the reporter needs: `memscout resolve` prints the `(module, offset)` to relocate, and
-  `memscout offsets` prints the field specs to decode.
+| Side | Runs | Has symbols/DWARF? | Job |
+|------|------|--------------------|-----|
+| **Developer** (+ AI agent) | offline, on a copy of the target's build | **yes** | resolve addresses + field layouts, author a script, analyze the log |
+| **Reporter** | on the affected machine | **no** | run the script, share the log |
 
-See [`examples/`](examples/) for a runnable end-to-end walkthrough (`author.py` → `collect.py`).
+**1. Developer resolves the addresses** offline, keyed to the reporter's exact build. `resolve`
+gives the `(module, offset)` the reporter will relocate; `offsets` turns a type's DWARF into the
+`OFF:TYPE:NAME` field specs (or write them by hand):
+
+```console
+$ memscout resolve <pid> _ZTV7Session --module demo_target
+_ZTV7Session = 0x… = demo_target+0x3d50   (vtable, size=…, via local-symtab)
+$ memscout offsets demo_target-with-debug Session mActive mId mUser
+8:bool:mActive
+12:i32:mId
+24:nscstring:mUser
+```
+
+Those go into a small **config** the reporter's script reads — the only thing that's build-specific:
+
+```json
+{ "class": "_ZTV7Session", "module": "demo_target", "vtable_offset": 15696,
+  "build_id": "f3e8279a…", "field_specs": ["8:bool:mActive", "12:i32:mId", "24:nscstring:mUser"] }
+```
+
+`vtable_offset` is relative to the module's load base; `build_id` lets the reporter confirm the
+build matches before trusting the offsets.
+
+**2. Reporter runs one self-contained file.** `bundle` inlines the runtime so the script needs only
+a stock Python 3 — no memscout install, no packages. It **relocates** (`load_bias + offset`),
+**scans** the heap for live objects, **decodes** the fields, and writes a JSON-lines log:
+
+```console
+$ memscout bundle collect.py -o collect_bundled.py     # developer builds the one file
+$ python3 collect_bundled.py <pid> session.json --out sessions.jsonl   # reporter runs it
+```
+
+**3. Developer analyzes** the shared log offline.
+
+See [`examples/`](examples/) for the full runnable walkthrough (`demo_target.cpp` → `author.py` →
+`collect.py`, with real output and the exact config).
 
 **Working with an AI agent?** This repo ships an agent skill,
 [`skills/memscout-collect/SKILL.md`](skills/memscout-collect/SKILL.md), that teaches the full
