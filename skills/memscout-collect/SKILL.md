@@ -35,8 +35,8 @@ file. This skill walks you from source code to that shipped file.
 > config is the only thing that varies, and pairing it is a deliberate choice, not an accident.
 
 Prerequisites: `pip install -e .` (no third-party Python deps). The developer-side `offsets`
-command reads DWARF through **gdb**, so gdb must be on your PATH for that step — that's also why
-it scales to Firefox `libxul` (gdb loads DWARF lazily). The reporter needs only a stock Python 3.
+command works on debug info of any size, including Firefox `libxul`. The reporter needs only a
+stock Python 3.
 
 > **Don't read memscout's source to author a script — read [`REFERENCE.md`](REFERENCE.md)**
 > (next to this file). It documents the complete reporter-side surface: every `Reporter`
@@ -96,7 +96,7 @@ memscout resolve <pid> _ZTVN7mozilla3dom8WakeLockE --module libxul.so
 #   -> _ZTVN...E = 0x...  =  libxul.so+0xNNNN  (vtable, ...)
 
 # d) get field offsets from DWARF (needs a build with debug info; see step 4 for stripped).
-#    `memscout offsets` reads DWARF through gdb, so it scales to Firefox libxul (gdb on PATH).
+#    `memscout offsets` works on debug info of any size, including Firefox libxul.
 memscout offsets "$LIB" mozilla::dom::WakeLock mLocked mHidden mTopic
 #   -> 40:bool:mLocked  41:bool:mHidden  48:nsstring:mTopic
 
@@ -122,13 +122,10 @@ raw pointee address, `nstarray` gives `{length, data}`, hashtables give
 `{count, capacity, live:[…]}` — see [`REFERENCE.md`](REFERENCE.md); knowing the shape is
 essential when a field points at more to read.
 
-> **Firefox `libxul` scales — `memscout offsets` reads DWARF through gdb.** gdb loads debug
-> info lazily (only the looked-up type is expanded), so the *same* `memscout offsets` command
-> works on libxul-sized debug info; just make sure **gdb is on your PATH**. There's no separate
-> path for big binaries any more. The only manual case: if `offsets` can't map a member's type
-> it emits a commented `# OFF:<class …>:name` placeholder — inspect that one type yourself with
-> `gdb -batch -ex 'ptype /o <Type>' <elf>`, pick the token from `memscout decoders`, and fill
-> the spec in by hand.
+> **Use `memscout offsets` — don't parse DWARF yourself.** It handles debug info of any size,
+> including Firefox `libxul`; there's no separate path for big binaries. If it can't map a
+> member's type it emits a commented `# OFF:<class …>:name` placeholder — pick the token for that
+> member from `memscout decoders` (matching its C/C++ type) and fill the spec in by hand.
 
 ### 4. Collect the spec strings and locations (the config)
 
@@ -144,8 +141,7 @@ not just your local one:
   fetch for that build. Resolve/compute against *that*.
 
 Assemble the config with the authoring helper. It resolves the vtable and emits the config;
-`--debuginfo/--type` generates the field specs from DWARF (through gdb, so it works on
-`libxul` too):
+`--debuginfo/--type` generates the field specs from DWARF (works on `libxul` too):
 
 ```bash
 python examples/author.py <pid> _ZTVN7mozilla3dom8WakeLockE \
@@ -279,9 +275,9 @@ script. A reporter script uses only the surface above.
 - **Read-only, safe to run.** The script never writes or stops the process — reassure the
   reporter, and keep the field set minimal and the script auditable (bundle without
   `--minify` if they want to read it).
-- **`offsets` needs gdb.** `memscout offsets` / `author.py --debuginfo` read DWARF through gdb
-  (which is also why they scale to Firefox `libxul` — gdb loads DWARF lazily), so gdb must be on
-  PATH. `resolve`/`scan`/`modules` use the symbol table, not DWARF, and need no gdb.
+- **`offsets` needs debug info.** `memscout offsets` / `author.py --debuginfo` read field
+  offsets from DWARF, so they need a build with debug info (they work on Firefox `libxul`).
+  `resolve`/`scan`/`modules` use the symbol table, not DWARF.
 - **Stripped local build?** You can't `offsets`/`resolve` locally — fetch the build's debug
   info via debuginfod / the Mozilla symbol server (memscout does this for `resolve`; hand a
   fetched debug ELF to `offsets`).

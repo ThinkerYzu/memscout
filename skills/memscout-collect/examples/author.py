@@ -12,7 +12,7 @@ debug-info ELF and a type name:
     # specs by hand:
     python author.py <pid> _ZTV7Session 12:i32:mId 24:nscstring:mUser > config.json
 
-    # specs from DWARF (reads DWARF through gdb; developer-side only):
+    # specs from DWARF (developer-side only):
     python author.py <pid> _ZTV7Session --debuginfo demo_target_g --type Session \
         --fields mActive mId mRequests > config.json
 
