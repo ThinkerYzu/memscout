@@ -374,16 +374,33 @@ register("nstarray", _decode_nstarray)
 
 # --- Firefox hashtables (layouts: see DESIGN.md) ---------------------------
 
+# Width of a cached hash slot: PLDHashNumber and mozilla::HashNumber are both
+# uint32_t (mfbt/HashFunctions.h). The hashes block is `capacity` of these.
+_HASH_WIDTH = 4
+
+
 def _live_slots(mem, store, capacity, entry_size, count, live_mask):
-    """Addresses of live entries: first uint32 (keyhash) passes (keyhash & live_mask) > 1."""
+    """Addresses of live entries.
+
+    PLDHashTable and mozilla::HashTable (mfbt) both lay out their storage as all
+    cached hashes contiguously first (hashes[capacity], _HASH_WIDTH bytes each),
+    *then* all entries contiguously (entries[capacity], entry_size bytes each) --
+    not one combined [hash, entry] struct repeated per slot. (Both headers spell
+    this out: interleaving would waste ABI-mandated padding between a 4-byte hash
+    and whatever alignment the entry itself needs, e.g. a single pointer on
+    64-bit.) So slot i's hash and slot i's entry live at different offsets from
+    `store`, and the entries block starts at store + capacity*_HASH_WIDTH with no
+    padding gap (&hashes[capacity] is exact; power-of-two capacity keeps entry0
+    naturally aligned).
+    """
     live = []
     if not (store and entry_size and capacity):
         return live
+    entries = store + capacity * _HASH_WIDTH
     for i in range(capacity):
-        slot = store + i * entry_size
-        keyhash = mem.read_uint(slot, 4)
+        keyhash = mem.read_uint(store + i * _HASH_WIDTH, _HASH_WIDTH)
         if keyhash is not None and (keyhash & live_mask) > 1:
-            live.append(slot)
+            live.append(entries + i * entry_size)
             if count is not None and len(live) >= count:
                 break
     return live

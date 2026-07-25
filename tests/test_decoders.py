@@ -135,13 +135,17 @@ class ContainerTest(unittest.TestCase):
 
 class HashtableTest(unittest.TestCase):
     def test_pldhash_counts_and_enumerates_live(self):
+        # PLDHashTable's EntryStore lays out hashes[capacity] (4 bytes each) first,
+        # then entries[capacity] (entry_size bytes each) -- not interleaved per slot.
+        # See PLDHashTable.h's EntryStore comment for why (avoids ABI padding).
         mem = FakeMemory()
         store = 0x9000
         entry_size, capacity = 16, 8
-        slots = bytearray(capacity * entry_size)
+        hashes = bytearray(capacity * 4)
         for idx, keyhash in ((0, 5), (2, 9)):               # two live entries
-            struct.pack_into("<I", slots, idx * entry_size, keyhash)
-        mem.place(store, slots)
+            struct.pack_into("<I", hashes, idx * 4, keyhash)
+        entries = bytearray(capacity * entry_size)
+        mem.place(store, bytes(hashes) + bytes(entries))
         table = 0x4000
         # mOps, mEntryStore, mGeneration, mHashShift=29, mEntrySize=16, mEntryCount=2, mRemoved=0
         mem.place(table, pack(("<Q", 0), ("<Q", store), ("<H", 0), ("<B", 29),
@@ -150,23 +154,28 @@ class HashtableTest(unittest.TestCase):
         self.assertEqual(got["count"], 2)
         self.assertEqual(got["capacity"], capacity)         # 1 << (32 - 29)
         self.assertEqual(got["entry_size"], entry_size)
-        self.assertEqual(got["live"], [store, store + 2 * entry_size])
+        entries_base = store + capacity * 4
+        self.assertEqual(got["live"], [entries_base, entries_base + 2 * entry_size])
 
     def test_mhashtable_needs_entry_size_for_live(self):
+        # mozilla::HashTable (mfbt) uses the same hashes-then-entries layout as
+        # PLDHashTable (see mfbt/HashTable.h's HashTableEntry comment).
         mem = FakeMemory()
         table = 0x9000
         entry_size, capacity = 8, 8
-        slots = bytearray(capacity * entry_size)
-        struct.pack_into("<I", slots, 1 * entry_size, 7)    # one live entry at slot 1
-        mem.place(table, slots)
+        hashes = bytearray(capacity * 4)
+        struct.pack_into("<I", hashes, 1 * 4, 7)            # one live entry at slot 1
+        entries = bytearray(capacity * entry_size)
+        mem.place(table, bytes(hashes) + bytes(entries))
         impl = 0x4000
         # mGenAndHashShift (low byte 29), mTable, mEntryCount=1, mRemoved=0
         mem.place(impl, pack(("<Q", 29), ("<Q", table), ("<I", 1), ("<I", 0)))
 
+        entries_base = table + capacity * 4
         with_size = decoders.decode_field(mem, impl, "0:mhashtable:8:m")[1]
         self.assertEqual(with_size["count"], 1)
         self.assertEqual(with_size["capacity"], capacity)
-        self.assertEqual(with_size["live"], [table + entry_size])
+        self.assertEqual(with_size["live"], [entries_base + entry_size])
 
         # Without an entry size, count/capacity still work; live can't be walked.
         no_size = decoders.decode_field(mem, impl, "0:mhashtable:m")[1]
