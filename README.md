@@ -2,14 +2,45 @@
 
 [![CI](https://github.com/ThinkerYzu/memscout/actions/workflows/ci.yml/badge.svg)](https://github.com/ThinkerYzu/memscout/actions/workflows/ci.yml)
 
-A lightweight, read-only runtime data-collection framework for live Linux processes.
+memscout reads data out of a **running** Linux program — without stopping it and without attaching
+a debugger. Give it a process ID and it can answer questions like *"how many objects of type `X`
+exist right now?"* or *"what are their field values?"* by reading the process's memory directly
+through `/proc/<pid>/mem`. It only ever **reads**, and never pauses the target, so it is safe to
+point at a live or production process.
 
-Inspect the internal state of a running application or service by reading its memory directly
-through `/proc/<pid>/mem` — no debugger, and the target is never stopped. memscout is a toolbox
-of read-only primitives (attach, module map, symbol resolution, memory/heap scan, typed field
-decoding); scripts compose them to answer a specific runtime question.
+Good for: inspecting live state in a running Firefox during a bug hunt, sampling a long-running
+service, or collecting a one-off snapshot from a machine where you can't run a debugger.
+
+## A quick taste
+
+Find every live `Session` object in a running process (pid `1234`) and print two of its fields:
+
+```console
+$ memscout scan 1234 _ZTV7Session 12:i32:mId 24:nscstring:mUser
+vptr 0x55f… (from /tmp/demo_target): 3 hit(s) across 0.5MB
+  0x6070fd2c8320  mId=1000 mUser=alice
+  0x6070fd2c9360  mId=1001 mUser=bob
+  0x6070fd2c9390  mId=1002 mUser=carol
+=> 3 object(s)
+```
+
+Two ideas do the work here:
+
+- **Finding the objects** — the `_ZTV7Session` argument is a *vtable symbol*. Every C++ class with
+  virtual methods gets one unique symbol from the compiler (`_ZTV7Session` is the mangled name for
+  "vtable for `Session`"), and every live object of that class begins with a pointer to it — so
+  scanning memory for that pointer finds them all.
+- **Reading the fields** — each `offset:type:name` argument is a *field spec*: `12:i32:mId` means
+  *"at byte 12 there's a 32-bit int; call it `mId`."* Run `memscout decoders` for every type you can
+  name (ints, bools, pointers, Firefox strings, arrays, hashtables, …).
+
+That example is the simplest case: one machine that has both the running process **and** its debug
+symbols. When you don't (see the workflow below), memscout splits the job so the machine running the
+process needs no symbols at all.
 
 ## CLI
+
+The full set of subcommands (each is also available as a Python library call):
 
     memscout modules  <pid>                                    # loaded ELF modules + build-ids
     memscout resolve  <pid> <symbol> [--module NAME]           # symbol -> addr + module+offset
